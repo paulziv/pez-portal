@@ -126,7 +126,10 @@ async def _github_commit(new_users: dict[str, list[str]]) -> str:
 # ── Routes ────────────────────────────────────────────────────────────────────
 
 @router.get("/", response_class=HTMLResponse, include_in_schema=False)
-async def ui(_user: UserClaims = Depends(_require)) -> str:
+async def ui() -> str:
+    # Auth is handled client-side — the JS checks the token and redirects
+    # to / if the user is not authenticated or lacks the admin role.
+    # The /api/config and /api/deploy endpoints remain fully protected.
     return _ADMIN_HTML
 
 
