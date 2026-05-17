@@ -374,9 +374,11 @@
       return;
     }
 
-    // Get token to call /api/me
+    // Get ID token (always a JWT) to call /api/me
     try {
-      _token = await _auth0.getTokenSilently();
+      const claims = await _auth0.getIdTokenClaims();
+      if (!claims) { showState("state-login"); return; }
+      _token = claims.__raw;
     } catch (e) {
       showState("state-login");
       return;
