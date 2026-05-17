@@ -7,13 +7,13 @@
   <script src="https://cdn.auth0.com/js/auth0-spa-js/2.0/auth0-spa-js.production.js"></script>
   <style>
     :root {
-      --bg:      #f0f4f8;
-      --surface: #ffffff;
-      --border:  #dde3ea;
-      --text:    #1a2636;
-      --muted:   #64748b;
-      --accent:  #005eb8;
-      --danger:  #c0392b;
+      --bg:      #0d1b2e;
+      --surface: #112240;
+      --border:  #1e3a5f;
+      --text:    #e2e8f0;
+      --muted:   #7fa8c9;
+      --accent:  #38bdf8;
+      --danger:  #f87171;
     }
 
     * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -76,7 +76,7 @@
       align-items: center;
       gap: 0.6rem;
       background: var(--accent);
-      color: #fff;
+      color: #0d1b2e;
       border: none;
       border-radius: 8px;
       padding: 0.7rem 1.5rem;
@@ -279,7 +279,9 @@
 
   <!-- Login state -->
   <div id="state-login" class="login-card" style="display:none;">
-    <div class="portal-logo">🏢</div>
+    <div class="portal-logo">
+      <img src="/static/logo.gif" alt="NACS Innovation" style="width:120px;height:auto;border-radius:8px;margin-bottom:0.25rem;">
+    </div>
     <h1>Pez Portal</h1>
     <p class="tagline">Internal app portal for NACS / TruAge tools.<br>Sign in to access your apps.</p>
     <button class="btn-login" onclick="login()">
@@ -303,7 +305,7 @@
 <div id="shell">
   <header>
     <div class="header-left">
-      <span class="header-logo">🏢</span>
+      <img src="/static/logo.gif" alt="NACS" style="height:32px;width:auto;border-radius:4px;">
       <span class="header-title">Pez Portal</span>
     </div>
     <div class="header-right">

@@ -11,6 +11,7 @@ import structlog
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
+from fastapi.staticfiles import StaticFiles
 from pathlib import Path
 
 from app.config import get_settings, APP_REGISTRY, USER_ROLES
@@ -111,6 +112,8 @@ def create_app() -> FastAPI:
     app.include_router(truage_activation_router)
     app.include_router(truage_account_router)
     app.include_router(stock_router)
+
+    app.mount("/static", StaticFiles(directory=str(_STATIC_DIR)), name="static")
 
     @app.get("/{path:path}", include_in_schema=False)
     async def catch_all(path: str) -> RedirectResponse:
