@@ -36,10 +36,21 @@ APP_REGISTRY = [
 USER_ROLES: dict[str, list[str]] = {
     "fgleeson@convenience.org": [
         "benchmark",
+        "stock",
+        "truage_account",
+        "truage_activation",
     ],
     "lorijoziv@gmail.com": [
         "benchmark",
         "stock",
+    ],
+    "pabernathy@mytruage.org": [
+        "truage_activation",
+        "truage_account",
+    ],
+    "ssikorski@convenience.org": [
+        "truage_activation",
+        "truage_account",
     ],
     "ziv.paul@gmail.com": [
         "admin",
