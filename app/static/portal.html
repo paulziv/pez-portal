@@ -1,0 +1,457 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <title>Pez Portal</title>
+  <script src="https://cdn.auth0.com/js/auth0-spa-js/2.0/auth0-spa-js.production.js"></script>
+  <style>
+    :root {
+      --bg:      #f0f4f8;
+      --surface: #ffffff;
+      --border:  #dde3ea;
+      --text:    #1a2636;
+      --muted:   #64748b;
+      --accent:  #005eb8;
+      --danger:  #c0392b;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+    }
+
+    /* ── Loading / Login overlay ─────────────────────────────────────── */
+    #overlay {
+      position: fixed; inset: 0;
+      background: var(--bg);
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      z-index: 100;
+    }
+    #overlay.hidden { display: none; }
+
+    .spinner {
+      width: 40px; height: 40px;
+      border: 3px solid var(--border);
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+      margin-bottom: 1rem;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .login-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 2.5rem 2.75rem;
+      text-align: center;
+      max-width: 380px;
+      width: 90%;
+      box-shadow: 0 4px 24px rgba(0,0,0,0.08);
+    }
+    .login-card .portal-logo {
+      font-size: 2.2rem;
+      margin-bottom: 0.5rem;
+    }
+    .login-card h1 {
+      font-size: 1.35rem;
+      font-weight: 700;
+      color: var(--text);
+      margin-bottom: 0.35rem;
+    }
+    .login-card .tagline {
+      font-size: 0.87rem;
+      color: var(--muted);
+      margin-bottom: 1.75rem;
+      line-height: 1.5;
+    }
+    .btn-login {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.6rem;
+      background: var(--accent);
+      color: #fff;
+      border: none;
+      border-radius: 8px;
+      padding: 0.7rem 1.5rem;
+      font-size: 0.95rem;
+      font-weight: 600;
+      cursor: pointer;
+      width: 100%;
+      justify-content: center;
+      transition: opacity 0.15s;
+    }
+    .btn-login:hover { opacity: 0.88; }
+
+    .denied-card {
+      background: var(--surface);
+      border: 1px solid #f5c6c6;
+      border-radius: 12px;
+      padding: 2.5rem 2.75rem;
+      text-align: center;
+      max-width: 380px;
+      width: 90%;
+      box-shadow: 0 4px 24px rgba(0,0,0,0.08);
+    }
+    .denied-card .denied-icon { font-size: 2.5rem; margin-bottom: 0.75rem; }
+    .denied-card h2 { font-size: 1.15rem; font-weight: 700; color: var(--danger); margin-bottom: 0.5rem; }
+    .denied-card p { font-size: 0.88rem; color: var(--muted); line-height: 1.55; margin-bottom: 1.5rem; }
+    .btn-logout-small {
+      background: none;
+      border: 1px solid var(--border);
+      border-radius: 7px;
+      padding: 0.5rem 1.2rem;
+      font-size: 0.85rem;
+      color: var(--muted);
+      cursor: pointer;
+    }
+    .btn-logout-small:hover { border-color: var(--danger); color: var(--danger); }
+
+    /* ── App shell ───────────────────────────────────────────────────── */
+    #shell { display: none; min-height: 100vh; flex-direction: column; }
+    #shell.visible { display: flex; }
+
+    header {
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      padding: 0 1.5rem;
+      height: 58px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      position: sticky;
+      top: 0;
+      z-index: 50;
+    }
+    .header-left {
+      display: flex;
+      align-items: center;
+      gap: 0.6rem;
+    }
+    .header-logo { font-size: 1.3rem; }
+    .header-title {
+      font-size: 1rem;
+      font-weight: 700;
+      color: var(--accent);
+      letter-spacing: -0.01em;
+    }
+    .header-right {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+    }
+    .user-name {
+      font-size: 0.85rem;
+      color: var(--muted);
+    }
+    .btn-logout {
+      background: none;
+      border: 1px solid var(--border);
+      border-radius: 7px;
+      padding: 0.38rem 0.9rem;
+      font-size: 0.82rem;
+      color: var(--muted);
+      cursor: pointer;
+      transition: border-color 0.15s, color 0.15s;
+    }
+    .btn-logout:hover { border-color: var(--accent); color: var(--accent); }
+
+    /* ── Main content ────────────────────────────────────────────────── */
+    main {
+      flex: 1;
+      max-width: 1100px;
+      margin: 0 auto;
+      padding: 2.5rem 1.5rem;
+      width: 100%;
+    }
+    .welcome {
+      margin-bottom: 2.25rem;
+    }
+    .welcome h2 {
+      font-size: 1.55rem;
+      font-weight: 700;
+      margin-bottom: 0.3rem;
+    }
+    .welcome p {
+      font-size: 0.9rem;
+      color: var(--muted);
+    }
+
+    .app-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+      gap: 1.25rem;
+    }
+
+    .app-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 1.5rem;
+      text-decoration: none;
+      color: var(--text);
+      display: flex;
+      flex-direction: column;
+      gap: 0.75rem;
+      transition: box-shadow 0.15s, transform 0.12s;
+      border-left: 4px solid var(--card-color, var(--accent));
+      cursor: pointer;
+    }
+    .app-card:hover {
+      box-shadow: 0 4px 18px rgba(0,0,0,0.1);
+      transform: translateY(-2px);
+    }
+    .card-header {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+    }
+    .card-icon {
+      font-size: 1.6rem;
+      line-height: 1;
+    }
+    .card-title {
+      font-size: 1rem;
+      font-weight: 700;
+    }
+    .card-desc {
+      font-size: 0.84rem;
+      color: var(--muted);
+      line-height: 1.55;
+    }
+    .card-arrow {
+      margin-top: auto;
+      font-size: 0.8rem;
+      color: var(--muted);
+      display: flex;
+      align-items: center;
+      gap: 0.3rem;
+    }
+    .card-arrow .ext-badge {
+      font-size: 0.72rem;
+      background: #eef4ff;
+      color: var(--accent);
+      padding: 0.1rem 0.45rem;
+      border-radius: 4px;
+      font-weight: 600;
+    }
+
+    .no-apps {
+      padding: 3rem 0;
+      text-align: center;
+      color: var(--muted);
+      font-size: 0.9rem;
+    }
+
+    footer {
+      border-top: 1px solid var(--border);
+      padding: 1rem 1.5rem;
+      text-align: center;
+      font-size: 0.78rem;
+      color: var(--muted);
+    }
+  </style>
+</head>
+<body>
+
+<!-- ── Overlay (loading / login / denied) ─────────────────────────────── -->
+<div id="overlay">
+  <!-- Loading state -->
+  <div id="state-loading">
+    <div class="spinner"></div>
+  </div>
+
+  <!-- Login state -->
+  <div id="state-login" class="login-card" style="display:none;">
+    <div class="portal-logo">🏢</div>
+    <h1>Pez Portal</h1>
+    <p class="tagline">Internal app portal for NACS / TruAge tools.<br>Sign in to access your apps.</p>
+    <button class="btn-login" onclick="login()">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+        <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/>
+      </svg>
+      Sign in
+    </button>
+  </div>
+
+  <!-- Access denied state -->
+  <div id="state-denied" class="denied-card" style="display:none;">
+    <div class="denied-icon">🔒</div>
+    <h2>Access Denied</h2>
+    <p>Your account is not authorised to use this portal. If you believe this is a mistake, contact your administrator.</p>
+    <button class="btn-logout-small" onclick="logout()">Sign out</button>
+  </div>
+</div>
+
+<!-- ── App shell (shown after successful auth) ─────────────────────────── -->
+<div id="shell">
+  <header>
+    <div class="header-left">
+      <span class="header-logo">🏢</span>
+      <span class="header-title">Pez Portal</span>
+    </div>
+    <div class="header-right">
+      <span class="user-name" id="user-display"></span>
+      <button class="btn-logout" onclick="logout()">Sign out</button>
+    </div>
+  </header>
+
+  <main>
+    <div class="welcome">
+      <h2 id="welcome-heading">Welcome back</h2>
+      <p>Select an app below to get started.</p>
+    </div>
+    <div class="app-grid" id="app-grid">
+      <!-- Cards injected by JS -->
+    </div>
+    <div class="no-apps" id="no-apps" style="display:none;">
+      No apps are currently assigned to your account.
+    </div>
+  </main>
+
+  <footer>Pez Portal · Internal use only</footer>
+</div>
+
+<script>
+  // ── Config ────────────────────────────────────────────────────────────
+  const AUTH0_DOMAIN    = "pezdev.us.auth0.com";
+  const AUTH0_CLIENT_ID = "4X6INHXnVCqb4M1KqUTVK9vDBhzT0q5d";
+
+  let _auth0 = null;
+  let _token  = null;
+
+  // ── State helpers ─────────────────────────────────────────────────────
+  function showState(name) {
+    ["state-loading", "state-login", "state-denied"].forEach(id => {
+      document.getElementById(id).style.display = id === name ? "" : "none";
+    });
+    document.getElementById("overlay").classList.toggle("hidden", name === null);
+    document.getElementById("shell").classList.toggle("visible", name === null);
+  }
+
+  // ── Auth0 bootstrap ───────────────────────────────────────────────────
+  async function initAuth() {
+    _auth0 = await auth0.createAuth0Client({
+      domain:   AUTH0_DOMAIN,
+      clientId: AUTH0_CLIENT_ID,
+      authorizationParams: {
+        redirect_uri: window.location.origin,
+        scope: "openid profile email",
+      },
+      cacheLocation: "localstorage",
+    });
+
+    // Handle redirect callback
+    const query = window.location.search;
+    if (query.includes("code=") && query.includes("state=")) {
+      await _auth0.handleRedirectCallback();
+      window.history.replaceState({}, document.title, window.location.pathname);
+    }
+
+    const isAuthenticated = await _auth0.isAuthenticated();
+
+    if (!isAuthenticated) {
+      showState("state-login");
+      return;
+    }
+
+    // Get token to call /api/me
+    try {
+      _token = await _auth0.getTokenSilently();
+    } catch (e) {
+      showState("state-login");
+      return;
+    }
+
+    await loadPortal();
+  }
+
+  async function loadPortal() {
+    let meData;
+    try {
+      const resp = await fetch("/api/me", {
+        headers: { Authorization: `Bearer ${_token}` },
+      });
+
+      if (resp.status === 401) { showState("state-login"); return; }
+      if (resp.status === 403) { showState("state-denied"); return; }
+      if (!resp.ok)            { showState("state-denied"); return; }
+
+      meData = await resp.json();
+    } catch (e) {
+      showState("state-denied");
+      return;
+    }
+
+    // Render portal
+    document.getElementById("user-display").textContent = meData.name || meData.email;
+    const firstName = (meData.name || meData.email).split(/[\s@]/)[0];
+    document.getElementById("welcome-heading").textContent = `Welcome back, ${firstName}`;
+
+    renderApps(meData.apps || []);
+    showState(null);  // hide overlay, show shell
+  }
+
+  function renderApps(apps) {
+    const grid = document.getElementById("app-grid");
+    const noApps = document.getElementById("no-apps");
+
+    if (!apps.length) {
+      noApps.style.display = "";
+      return;
+    }
+
+    grid.innerHTML = apps.map(app => `
+      <a class="app-card"
+         href="${escHtml(app.url)}"
+         style="--card-color: ${escHtml(app.color || '#005eb8')}"
+         ${app.external ? 'target="_blank" rel="noopener noreferrer"' : ''}>
+        <div class="card-header">
+          <span class="card-icon">${escHtml(app.icon || '📦')}</span>
+          <span class="card-title">${escHtml(app.title)}</span>
+        </div>
+        <p class="card-desc">${escHtml(app.description || '')}</p>
+        <div class="card-arrow">
+          Open ${app.external ? '<span class="ext-badge">↗ external</span>' : '→'}
+        </div>
+      </a>
+    `).join("");
+  }
+
+  // ── Auth actions ──────────────────────────────────────────────────────
+  async function login() {
+    await _auth0.loginWithRedirect({
+      authorizationParams: {
+        redirect_uri: window.location.origin,
+        scope: "openid profile email",
+      },
+    });
+  }
+
+  async function logout() {
+    await _auth0.logout({
+      logoutParams: { returnTo: window.location.origin },
+    });
+  }
+
+  // ── Utility ───────────────────────────────────────────────────────────
+  function escHtml(str) {
+    return String(str)
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#39;");
+  }
+
+  // ── Boot ──────────────────────────────────────────────────────────────
+  initAuth();
+</script>
+</body>
+</html>

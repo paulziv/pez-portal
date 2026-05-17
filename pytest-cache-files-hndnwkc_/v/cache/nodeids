@@ -1,0 +1,16 @@
+[
+  "tests/test_config.py::test_app_registry_has_required_keys",
+  "tests/test_config.py::test_app_registry_slugs_unique",
+  "tests/test_config.py::test_frank_has_only_benchmark",
+  "tests/test_config.py::test_paul_has_all_apps",
+  "tests/test_config.py::test_settings_defaults",
+  "tests/test_config.py::test_user_roles_slugs_exist_in_registry",
+  "tests/test_routes.py::test_api_me_bad_token_returns_401",
+  "tests/test_routes.py::test_api_me_no_token_returns_401",
+  "tests/test_routes.py::test_health",
+  "tests/test_routes.py::test_portal_returns_html",
+  "tests/test_routes.py::test_stock_ui_no_token_returns_401_or_403",
+  "tests/test_routes.py::test_truage_account_no_token_returns_401_or_403",
+  "tests/test_routes.py::test_truage_activation_no_token_returns_401_or_403",
+  "tests/test_routes.py::test_unknown_path_redirects_to_root"
+]
