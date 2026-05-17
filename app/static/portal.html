@@ -161,6 +161,16 @@
       transition: border-color 0.15s, color 0.15s;
     }
     .btn-logout:hover { border-color: var(--accent); color: var(--accent); }
+    .btn-admin {
+      font-size: 0.82rem;
+      color: var(--muted);
+      text-decoration: none;
+      padding: 0.38rem 0.7rem;
+      border: 1px solid var(--border);
+      border-radius: 7px;
+      transition: border-color 0.15s, color 0.15s;
+    }
+    .btn-admin:hover { border-color: var(--accent); color: var(--accent); }
 
     /* ── Main content ────────────────────────────────────────────────── */
     main {
@@ -298,6 +308,7 @@
     </div>
     <div class="header-right">
       <span class="user-name" id="user-display"></span>
+      <a class="btn-admin" id="admin-link" href="/apps/admin/" style="display:none">⚙️ Admin</a>
       <button class="btn-logout" onclick="logout()">Sign out</button>
     </div>
   </header>
@@ -393,6 +404,11 @@
     document.getElementById("user-display").textContent = meData.name || meData.email;
     const firstName = (meData.name || meData.email).split(/[\s@]/)[0];
     document.getElementById("welcome-heading").textContent = `Welcome back, ${firstName}`;
+
+    // Show admin link only for admin users
+    if ((meData.roles || []).includes("admin")) {
+      document.getElementById("admin-link").style.display = "";
+    }
 
     renderApps(meData.apps || []);
     showState(null);  // hide overlay, show shell
