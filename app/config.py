@@ -34,10 +34,20 @@ APP_REGISTRY = [
 
 # "admin" role maps to the admin card above; only users with this slug see it.
 USER_ROLES: dict[str, list[str]] = {
-    "ziv.paul@gmail.com": [
-        "admin", "benchmark", "truage_activation", "truage_account", "stock",
+    "fgleeson@convenience.org": [
+        "benchmark",
     ],
-    "fgleeson@convenience.org": ["benchmark"],
+    "lorijoziv@gmail.com": [
+        "benchmark",
+        "stock",
+    ],
+    "ziv.paul@gmail.com": [
+        "admin",
+        "benchmark",
+        "truage_activation",
+        "truage_account",
+        "stock",
+    ],
 }
 
 
