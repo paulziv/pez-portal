@@ -333,7 +333,8 @@ _ADMIN_HTML = """<!DOCTYPE html>
         cacheLocation: "localstorage",
       });
       if (!(await client.isAuthenticated())) return null;
-      return await client.getTokenSilently();
+      const claims = await client.getIdTokenClaims();
+      return claims ? claims.__raw : null;
     } catch { return null; }
   }
 
