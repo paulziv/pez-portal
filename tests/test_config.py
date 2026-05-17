@@ -3,7 +3,7 @@
 import pytest
 from app.config import APP_REGISTRY, USER_ROLES, get_settings
 
-META_SLUGS = {"admin"}  # valid slugs that are not portal cards
+META_SLUGS = set()  # all slugs are now in APP_REGISTRY
 
 
 def test_app_registry_has_required_keys():

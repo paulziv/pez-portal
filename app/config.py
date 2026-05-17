@@ -10,6 +10,10 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 APP_REGISTRY = [
+    {"slug": "admin", "title": "Admin",
+     "description": "Manage portal users and app access.",
+     "icon": "⚙️", "color": "#64748b",
+     "url": "/apps/admin/", "external": False},
     {"slug": "benchmark", "title": "BenchPoint",
      "description": "990 peer benchmarking — Gemini-powered nonprofit BI comparisons.",
      "icon": "📊", "color": "#005eb8",
@@ -28,7 +32,7 @@ APP_REGISTRY = [
      "url": "/apps/stock/", "external": False},
 ]
 
-# "admin" is a meta-role — grants /apps/admin/ access but not a portal card.
+# "admin" role maps to the admin card above; only users with this slug see it.
 USER_ROLES: dict[str, list[str]] = {
     "ziv.paul@gmail.com": [
         "admin", "benchmark", "truage_activation", "truage_account", "stock",
