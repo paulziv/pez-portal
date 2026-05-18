@@ -1,92 +1,139 @@
-# Pez Portal
+# Innovation Portal (pez-portal)
 
-Role-based internal app portal. Users log in via Auth0 and see only the apps
-their email is authorised to access.
+Auth0-gated internal app portal for NACS / TruAge tools. Deployed on Railway.
 
 ## Architecture
-- **Stack**: Python 3.12, FastAPI, Auth0 SPA SDK v2, python-jose, httpx,
-  pydantic-settings, structlog.
-- **Auth**: Auth0 SPA (client-side JWT issuance) + python-jose RS256 validation
-  on every backend route. No session cookies — Bearer tokens only.
-- **RBAC**: `app/config.py` — `USER_ROLES` dict maps email → list of app slugs.
-  `APP_REGISTRY` defines all portal cards. Add a user by adding their email to
-  `USER_ROLES`.
-- **Routing**: Each app lives under `/apps/<slug>/`. Internal apps are FastAPI
-  routers mounted in `main.py`. External apps (e.g. BenchPoint) are links only.
 
-## Apps
-| Slug              | Location             | Status     |
-|-------------------|----------------------|------------|
-| benchmark         | 990benchmark.railway | External   |
-| truage_activation | /apps/truage-activation/ | Stub    |
-| truage_account    | /apps/truage-account/    | Stub    |
-| stock             | /apps/stock/             | Live (public Deribit data) |
+- **Stack**: Python 3.12, FastAPI, Auth0 SPA SDK v2 (client-side), pydantic-settings, structlog
+- **Auth pattern**: Auth0 RS256 JWT. HTML shell routes return 200 freely — auth is
+  handled client-side via Auth0 SPA SDK. All `/api/*` sub-routes are protected by
+  `require_auth` / `require_app` FastAPI dependencies.
+- **Token pattern**: Always use `getIdTokenClaims().__raw` (the ID token JWT), NOT
+  `getTokenSilently()`. Without an `audience`, Auth0 returns an opaque access token
+  that python-jose cannot verify.
+- **Static files**: served via `StaticFiles` mount — requires `aiofiles` in
+  requirements.txt or Railway startup will crash with "Not Found".
+- **Single worker** (Railway free tier) — no shared state issues.
 
-## Auth0 config
-- Tenant: `pezdev.us.auth0.com`
-- Client ID: `4X6INHXnVCqb4M1KqUTVK9vDBhzT0q5d` (SPA, public — OK to commit)
-- Allowed Callback URLs: `https://<railway-url>, http://localhost:8080`
-- Allowed Logout URLs:   `https://<railway-url>, http://localhost:8080`
-- Allowed Web Origins:   `https://<railway-url>, http://localhost:8080`
+## Auth0 Config
 
-## Users
-| Email                        | Apps                                         |
-|------------------------------|----------------------------------------------|
-| ziv.paul@gmail.com           | all                                          |
-| fgleeson@convenience.org     | benchmark only                               |
-
-To add a user: edit `USER_ROLES` in `app/config.py` and redeploy.
-
-Frank currently needs a username/password Auth0 account (he uses Microsoft 365,
-not Google Workspace). Create via Auth0 dashboard → User Management → Users →
-Create User. Once done, remove `connection: "google-oauth2"` from BenchPoint's
-`index.html` so the login button works for all connection types.
+- Tenant:    `pezdev.us.auth0.com`
+- Client ID: `4X6INHXnVCqb4M1KqUTVK9vDBhzT0q5d`
+- Allowed Callback + Logout URLs: `https://nacsportal.up.railway.app`
+- Allowed Web Origins: `https://nacsportal.up.railway.app`
 
 ## Deployment
-- **Railway service**: `pez-portal` (separate from BenchPoint)
-- **Repo**: `https://github.com/paulziv/pez-portal` (create this)
-- **Branch**: `main`, auto-deploy on push
-- **PORT**: Railway injects `$PORT`; Dockerfile uses `${PORT:-8080}`
 
-## Railway env vars to set
-```
-AUTH0_DOMAIN=pezdev.us.auth0.com
-AUTH0_CLIENT_ID=4X6INHXnVCqb4M1KqUTVK9vDBhzT0q5d
-LOG_LEVEL=INFO
-APP_VERSION=1.0.0
-```
-No secrets required — portal uses only public Auth0 keys and public Deribit API.
+- **Production**: `https://nacsportal.up.railway.app`
+- **Platform**: Railway (auto-deploys from `paulziv/pez-portal` main branch)
+- **Env vars** required on Railway:
+  - `AUTH0_CLIENT_ID`, `AUTH0_DOMAIN`, `GITHUB_TOKEN`, `GITHUB_REPO`, `GITHUB_BRANCH`
+- Deploy: push to GitHub main → Railway auto-deploys.
 
-## Local dev
-```bash
-python -m venv .venv
-.venv/Scripts/pip install -r requirements.txt   # Windows
-# or
-.venv/bin/pip install -r requirements.txt       # macOS/Linux
+## Key files
 
-# Run
-AUTH0_DOMAIN=pezdev.us.auth0.com .venv/Scripts/uvicorn app.main:app --reload --port 8080
+```
+app/
+  main.py              # FastAPI app factory, /api/me, /health
+  config.py            # APP_REGISTRY, USER_ROLES, Settings (pydantic-settings)
+  auth.py              # JWT verification, require_auth, require_app dependencies
+  static/
+    portal.html        # Login card + app grid SPA (Auth0 client-side)
+    logo.gif           # NACS Innovation animated logo (loop=3, ~37 frames)
+    nacs-innovation-logo.gif  # New cream-bg lightbulb-with-rings logo (loop=3)
+  routers/
+    admin/routes.py    # Admin panel — edit USER_ROLES via GitHub API
+    stock/routes.py    # Market Dashboard — Deribit public API proxy
+    truage_activation/routes.py  # TruAge Activation (stub, coming soon)
+    truage_account/routes.py     # TruAge Account Manager (stub, coming soon)
+tests/
+  test_config.py       # APP_REGISTRY structure, USER_ROLES integrity
+  test_routes.py       # HTTP-level route tests via TestClient
 ```
 
-## Tests
-```bash
-.venv/Scripts/pytest tests/ -q   # Windows
-.venv/bin/pytest tests/ -q       # macOS/Linux
+## Brand Palette
+
 ```
+--bg:      #F5F0E8  warm cream background
+--surface: #FFFFFF  card surface
+--border:  #DDD8CE  sand border
+--text:    #1A2332  ink
+--muted:   #7A7060  warm gray
+--navy:    #00203F  Core Navy (header, buttons)
+--accent:  #2E6DA4  Mid Blue (links, arrows)
+--mint:    #36ECDE  Neon Mint (header title, hover glow)
+--danger:  #C0392B  error red
+```
+
+Per-app accent colors (card left border):
+- Admin:             `#64748b` slate
+- BenchPoint:        `#005eb8` blue
+- TruAge Activation: `#087f5b` teal-green
+- TruAge Account:    `#b36b00` amber
+- Market Dashboard:  `#6741d9` purple (card) / `#36ECDE` mint (dashboard UI)
+
+## User / Role Management
+
+`app/config.py` holds `USER_ROLES` dict mapping email → list of app slugs.
+The admin panel (`/apps/admin/`) lets admins edit this via the GitHub API —
+it commits a new `config.py` directly to the repo, triggering a Railway redeploy.
+
+Currently authorised users:
+- `ziv.paul@gmail.com` — all apps (admin, benchmark, truage_activation, truage_account, stock)
+- `fgleeson@convenience.org` — benchmark only
+
+## Adding a new user
+
+1. Open `https://nacsportal.up.railway.app/apps/admin/`
+2. Click "Add user", enter email, tick the desired app checkboxes
+3. Click "Deploy changes" — Railway redeploys in ~60 seconds
+
+Or directly in `app/config.py`:
+```python
+USER_ROLES["new.user@example.com"] = ["benchmark", "truage_activation"]
+```
+Then push to GitHub main.
 
 ## Adding a new app
-1. Create `app/routers/<slug>/` with `__init__.py` and `routes.py`.
-2. Add the router to `APP_REGISTRY` in `app/config.py`.
-3. Update `USER_ROLES` to grant access to the right users.
-4. Mount the router in `app/main.py` (`app.include_router(...)`).
-5. Write a placeholder test in `tests/`.
 
-## Stock dashboard notes
-- Shows only **public** Deribit market data — no credentials, no personal positions.
-- Personal trading data lives on zivnas behind VPN (not exposed here).
-- Auto-refreshes every 30 seconds.
+1. Add entry to `APP_REGISTRY` in `app/config.py`
+2. Add `slug` to relevant users in `USER_ROLES`
+3. Create `app/routers/<slug>/routes.py` with router
+4. Register router in `app/main.py`
+5. Add a test to `tests/test_routes.py`
 
-## Open work
-- Frank's Auth0 account: create username/password in Auth0 dashboard.
-- TruAge routers: replace stubs with real data logic.
-- Microsoft 365 SSO: requires proper Azure app registration (long-term).
+## BenchPoint integration (open item)
+
+BenchPoint (`https://990benchmark.up.railway.app/ui/`) is a separate Railway
+service with its own Auth0 setup. Two open items:
+- **SSO**: configure both apps to use the same Auth0 tenant/client so the portal
+  session carries over (no second login prompt).
+- **Brand colours**: BenchPoint UI has some non-brand greens/blues. Needs CSS
+  update in the `nacs-990-benchmark` repo.
+
+## Common commands
+
+```bash
+# Install deps
+pip install -r requirements.txt -r requirements-dev.txt
+
+# Run locally
+AUTH0_DOMAIN=pezdev.us.auth0.com AUTH0_CLIENT_ID=4X6INHXnVCqb4M1KqUTVK9vDBhzT0q5d \
+  uvicorn app.main:app --reload --port 8080
+
+# Run tests
+python3 -m pytest tests/ -q
+
+# Deploy
+git push origin main   # Railway auto-deploys
+```
+
+## Known gotchas
+
+- **File truncation**: Large Python files with embedded HTML strings can truncate
+  during context-window edits. Use `python3 -c "import ast; ast.parse(open(f).read())"` 
+  to validate all files before pushing.
+- **Config caching**: `get_settings()` is `@lru_cache`. If you change `.env` at
+  runtime, restart the server.
+- **Admin panel GitHub deploy**: requires `GITHUB_TOKEN` env var with `repo` scope
+  and `GITHUB_REPO=paulziv/pez-portal` set on Railway.

@@ -494,3 +494,11 @@ _ADMIN_HTML = """<!DOCTYPE html>
 </script>
 </body>
 </html>"""
+for getToken()
+  const sdk = document.createElement("script");
+  sdk.src = "https://cdn.auth0.com/js/auth0-spa-js/2.0/auth0-spa-js.production.js";
+  sdk.onload = init;
+  document.head.appendChild(sdk);
+</script>
+</body>
+</html>"""

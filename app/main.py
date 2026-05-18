@@ -84,7 +84,7 @@ def create_app() -> FastAPI:
         if portal_path.exists():
             return Response(content=portal_path.read_bytes(),
                             media_type="text/html; charset=utf-8")
-        return HTMLResponse("<h1>Portal loadingâ¦</h1>")
+        return HTMLResponse("<h1>Portal loading...</h1>")
 
     @app.get("/api/me")
     async def me(request: Request) -> JSONResponse:
