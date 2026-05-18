@@ -37,15 +37,37 @@ _SHELL = """<!DOCTYPE html>
                   padding:0.3rem 0.75rem;}}
     .refresh-btn:hover{{color:#36ECDE;border-color:#36ECDE;}}
     #report-frame{{width:100%;border:none;display:block;min-height:calc(100vh - 54px);}}
-    #loading{{padding:4rem 2rem;text-align:center;}}
+    #loading{{
+      display:flex;flex-direction:column;align-items:center;justify-content:center;
+      min-height:calc(100vh - 54px);padding:2rem 1.5rem;
+    }}
+    .loader-card{{
+      background:#fff;border:1px solid #DDD8CE;border-radius:14px;
+      padding:2.5rem 2.5rem 2rem;max-width:460px;width:100%;
+      box-shadow:0 4px 24px rgba(0,32,63,0.08);text-align:center;
+    }}
     .loader-ring{{
-      display:inline-block;width:44px;height:44px;margin-bottom:1.25rem;
+      display:inline-block;width:48px;height:48px;margin-bottom:1.25rem;
       border:4px solid #DDD8CE;border-top-color:#36ECDE;
       border-radius:50%;animation:spin 0.9s linear infinite;
     }}
     @keyframes spin{{to{{transform:rotate(360deg);}}}}
-    .loader-msg{{font-size:1rem;font-weight:600;color:#1A2332;margin-bottom:0.35rem;}}
-    .loader-sub{{font-size:0.82rem;color:#7A7060;}}
+    .loader-msg{{font-size:1.05rem;font-weight:700;color:#1A2332;margin-bottom:0.3rem;}}
+    .loader-sub{{font-size:0.82rem;color:#7A7060;margin-bottom:1.75rem;}}
+    .steps{{text-align:left;border-top:1px solid #EDE8DF;padding-top:1.25rem;
+            display:flex;flex-direction:column;gap:0.6rem;margin-top:0.25rem;}}
+    .step{{display:flex;align-items:center;gap:0.75rem;font-size:0.84rem;
+           color:#c5bdb3;transition:color 0.3s,font-weight 0.2s;}}
+    .step.done{{color:#087f5b;}}
+    .step.active{{color:#1A2332;font-weight:500;}}
+    .step-icon{{width:18px;flex-shrink:0;text-align:center;font-size:0.82rem;}}
+    .mini-ring{{width:13px;height:13px;border:2px solid #DDD8CE;
+                border-top-color:#36ECDE;border-radius:50%;
+                animation:spin 0.8s linear infinite;display:inline-block;
+                vertical-align:middle;}}
+    .loader-warn{{display:none;margin-top:1.25rem;padding:0.75rem 1rem;
+                  background:#fff8e1;border:1px solid #e6b800;border-radius:8px;
+                  font-size:0.82rem;color:#7a5c00;line-height:1.5;}}
     #error-box{{display:none;padding:2rem 1.5rem;}}
     .err-card{{background:#fff;border:1px solid #DDD8CE;border-left:6px solid #C0392B;
                border-radius:10px;padding:2rem;max-width:600px;margin:0 auto;}}
@@ -62,9 +84,37 @@ _SHELL = """<!DOCTYPE html>
   </div>
 </header>
 <div id="loading">
-  <div class="loader-ring"></div>
-  <div class="loader-msg" id="loader-msg">Connecting to HubSpot&hellip;</div>
-  <div class="loader-sub" id="loader-sub">This usually takes 10&ndash;20 seconds</div>
+  <div class="loader-card">
+    <div class="loader-ring"></div>
+    <div class="loader-msg" id="loader-msg">Connecting to HubSpot&hellip;</div>
+    <div class="loader-sub">Hang tight &mdash; this usually takes 30&ndash;45 seconds</div>
+    <div class="steps">
+      <div class="step pending" id="step-1">
+        <span class="step-icon">&#x25CB;</span>
+        <span>Authenticating with HubSpot API</span>
+      </div>
+      <div class="step pending" id="step-2">
+        <span class="step-icon">&#x25CB;</span>
+        <span>Fetching retailer account records</span>
+      </div>
+      <div class="step pending" id="step-3">
+        <span class="step-icon">&#x25CB;</span>
+        <span>Pulling activation campaign data</span>
+      </div>
+      <div class="step pending" id="step-4">
+        <span class="step-icon">&#x25CB;</span>
+        <span>Calculating activation rates by territory</span>
+      </div>
+      <div class="step pending" id="step-5">
+        <span class="step-icon">&#x25CB;</span>
+        <span>Assembling your report</span>
+      </div>
+    </div>
+    <div class="loader-warn" id="loader-warn">
+      Still working&hellip; The HubSpot connection is taking longer than usual.
+      Railway may be waking up a cold service. Sit tight &mdash; it will arrive.
+    </div>
+  </div>
 </div>
 <div id="error-box" style="display:none">
   <div class="err-card">
@@ -76,10 +126,10 @@ _SHELL = """<!DOCTYPE html>
 </iframe>
 <script>
   const LOAD_MSGS = [
-    ["Connecting to HubSpot…",        "Pulling your latest account data"],
+    ["Connecting to HubSpot…",         "Pulling your latest account data"],
     ["Crunching the numbers…",         "Counting retailers, checking activations"],
     ["Scanning retailer accounts…",    "Matching accounts to territories"],
-    ["Checking activation status…",    "This usually takes 10–20 seconds"],
+    ["Checking activation status…",    "Hang tight — almost done"],
     ["Almost there…",                  "Building your report now"],
     ["Finalizing the report…",         "Just a few more seconds"],
   ];
@@ -102,12 +152,53 @@ _SHELL = """<!DOCTYPE html>
   function stopLoadingMessages() {{
     if (_msgTimer) {{ clearTimeout(_msgTimer); _msgTimer = null; }}
   }}
+
+  // ── Step progression ──────────────────────────────────────────────────────
+  // Steps go active at these offsets (ms); step N-1 is marked done when N goes active
+  const _STEP_MS = [600, 9000, 19000, 30000, 41000];
+  let _stepTimers = [];
+  let _warnTimer  = null;
+
+  function _resetSteps() {{
+    for (let i = 1; i <= 5; i++) {{
+      const el = document.getElementById('step-' + i);
+      if (el) {{ el.className = 'step pending'; el.querySelector('.step-icon').innerHTML = '&#x25CB;'; }}
+    }}
+    document.getElementById('loader-warn').style.display = 'none';
+  }}
+  function _setStepActive(n) {{
+    if (n > 1) {{
+      const prev = document.getElementById('step-' + (n - 1));
+      if (prev) {{ prev.className = 'step done'; prev.querySelector('.step-icon').innerHTML = '&#x2713;'; }}
+    }}
+    const el = document.getElementById('step-' + n);
+    if (el) {{ el.className = 'step active'; el.querySelector('.step-icon').innerHTML = '<span class="mini-ring"></span>'; }}
+  }}
+  function _startSteps() {{
+    _stepTimers.forEach(t => clearTimeout(t)); _stepTimers = [];
+    if (_warnTimer) {{ clearTimeout(_warnTimer); _warnTimer = null; }}
+    _resetSteps();
+    _STEP_MS.forEach((ms, i) => {{
+      _stepTimers.push(setTimeout(() => _setStepActive(i + 1), ms));
+    }});
+    // Show warning banner if still loading after 50s
+    _warnTimer = setTimeout(() => {{
+      document.getElementById('loader-warn').style.display = 'block';
+    }}, 50000);
+  }}
+  function _stopSteps() {{
+    _stepTimers.forEach(t => clearTimeout(t)); _stepTimers = [];
+    if (_warnTimer) {{ clearTimeout(_warnTimer); _warnTimer = null; }}
+  }}
+
   function showLoading(startIdx) {{
     stopLoadingMessages();
-    document.getElementById('loading').style.display = 'block';
+    _stopSteps();
+    document.getElementById('loading').style.display = '';
     document.getElementById('error-box').style.display = 'none';
     document.getElementById('report-frame').style.display = 'none';
     startLoadingMessages(startIdx);
+    _startSteps();
   }}
 
   async function getToken() {{
@@ -129,11 +220,16 @@ _SHELL = """<!DOCTYPE html>
     const token = await getToken();
     if (!token) return;
     try {{
+      // 90-second client-side hard timeout (Railway cold-starts can be slow)
+      const controller = new AbortController();
+      const fetchTimeout = setTimeout(() => controller.abort(), 90000);
       const resp = await fetch('/apps/truage-activation/proxy', {{
-        headers: {{ 'Authorization': 'Bearer ' + token }}
+        headers: {{ 'Authorization': 'Bearer ' + token }},
+        signal: controller.signal,
       }});
+      clearTimeout(fetchTimeout);
       if (!resp.ok) {{
-        stopLoadingMessages();
+        stopLoadingMessages(); _stopSteps();
         document.getElementById('loading').style.display = 'none';
         document.getElementById('error-msg').textContent = 'Error ' + resp.status + ' — report unavailable.';
         document.getElementById('error-box').style.display = 'block';
@@ -145,14 +241,17 @@ _SHELL = """<!DOCTYPE html>
       const frame = document.getElementById('report-frame');
       frame.src = url;
       frame.onload = () => {{
-        stopLoadingMessages();
+        stopLoadingMessages(); _stopSteps();
         document.getElementById('loading').style.display = 'none';
         frame.style.display = 'block';
       }};
     }} catch(e) {{
-      stopLoadingMessages();
+      stopLoadingMessages(); _stopSteps();
       document.getElementById('loading').style.display = 'none';
-      document.getElementById('error-msg').textContent = 'Network error: ' + e.message;
+      const msg = e.name === 'AbortError'
+        ? 'Request timed out after 90 seconds. The HubSpot service may be unavailable — try refreshing.'
+        : 'Network error: ' + e.message;
+      document.getElementById('error-msg').textContent = msg;
       document.getElementById('error-box').style.display = 'block';
     }}
   }}
@@ -179,8 +278,9 @@ _SHELL = """<!DOCTYPE html>
     }}
   }}
 
-  // Start message rotation immediately — don't wait for Auth0 SDK download
+  // Start message rotation and step progression immediately
   startLoadingMessages(0);
+  _startSteps();
 
   // Bootstrap Auth0 SDK
   const sdk = document.createElement('script');
@@ -202,7 +302,7 @@ async def ui() -> str:
 async def proxy_report(user: UserClaims = Depends(_require)) -> HTMLResponse:
     """Server-side proxy — fetches the live report from the upstream service."""
     try:
-        async with httpx.AsyncClient(timeout=30) as client:
+        async with httpx.AsyncClient(timeout=90) as client:
             resp = await client.get(f"{_UPSTREAM}/")
         if resp.status_code == 202:
             # Report not generated yet — upstream is still starting up
