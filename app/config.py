@@ -26,6 +26,10 @@ APP_REGISTRY = [
      "description": "Account manager performance and pipeline report.",
      "icon": "📋", "color": "#b36b00",
      "url": "https://nacstam.up.railway.app", "external": True},
+    {"slug": "truage_dictionary", "title": "TruAge Data Dictionary",
+     "description": "HubSpot field definitions, owner roster, and data standards.",
+     "icon": "📖", "color": "#0c6e5c",
+     "url": "https://nacstam.up.railway.app/dictionary", "external": True},
     {"slug": "stock", "title": "Market Dashboard",
      "description": "Deribit market data — instruments, order book, price tracking.",
      "icon": "📈", "color": "#6741d9",
@@ -39,6 +43,7 @@ USER_ROLES: dict[str, list[str]] = {
         "stock",
         "truage_account",
         "truage_activation",
+        "truage_dictionary",
     ],
     "lorijoziv@gmail.com": [
         "benchmark",
@@ -47,16 +52,19 @@ USER_ROLES: dict[str, list[str]] = {
     "pabernathy@mytruage.org": [
         "truage_activation",
         "truage_account",
+        "truage_dictionary",
     ],
     "ssikorski@convenience.org": [
         "truage_activation",
         "truage_account",
+        "truage_dictionary",
     ],
     "ziv.paul@gmail.com": [
         "admin",
         "benchmark",
         "truage_activation",
         "truage_account",
+        "truage_dictionary",
         "stock",
     ],
 }

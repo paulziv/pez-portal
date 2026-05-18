@@ -136,8 +136,8 @@ _SHELL = """<!DOCTYPE html>
 
 
 @router.get("/", response_class=HTMLResponse, include_in_schema=False)
-async def ui(user: UserClaims = Depends(_require)) -> str:
-    """Portal shell — auth-gated, loads the report in an iframe via /proxy."""
+async def ui() -> str:
+    """Portal shell — served publicly; client-side Auth0 check gates the /proxy call."""
     return _SHELL
 
 
