@@ -35,7 +35,14 @@ _SHELL = """<!DOCTYPE html>
                   padding:0.3rem 0.75rem;}}
     .refresh-btn:hover{{color:#36ECDE;border-color:#36ECDE;}}
     #report-frame{{width:100%;border:none;display:block;min-height:calc(100vh - 54px);}}
-    #loading{{padding:3rem;text-align:center;color:#7A7060;font-size:0.9rem;}}
+    #loading{{padding:4rem 2rem;text-align:center;}}
+    .loader-pulse{{
+      display:inline-block;width:48px;height:48px;margin-bottom:1.5rem;
+    }}
+    .loader-pulse svg{{animation:spin 1.2s linear infinite;}}
+    @keyframes spin{{to{{transform:rotate(360deg);}}}}
+    .loader-msg{{font-size:1rem;font-weight:600;color:#2a3a50;margin-bottom:0.4rem;}}
+    .loader-sub{{font-size:0.82rem;color:#7A7060;}}
     #error-box{{display:none;padding:2rem 1.5rem;}}
     .err-card{{background:#fff;border:1px solid #DDD8CE;border-left:6px solid #c92a2a;
                border-radius:10px;padding:2rem;max-width:600px;margin:0 auto;}}
@@ -51,7 +58,16 @@ _SHELL = """<!DOCTYPE html>
     <a class="back" href="/">&#x2190; Portal</a>
   </div>
 </header>
-<div id="loading">Loading report&hellip;</div>
+<div id="loading">
+  <div class="loader-pulse">
+    <svg viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg" width="48" height="48">
+      <circle cx="24" cy="24" r="20" stroke="#DDD8CE" stroke-width="4"/>
+      <path d="M24 4 A20 20 0 0 1 44 24" stroke="#36ECDE" stroke-width="4" stroke-linecap="round"/>
+    </svg>
+  </div>
+  <div class="loader-msg" id="loader-msg">Connecting to HubSpot&hellip;</div>
+  <div class="loader-sub" id="loader-sub">This usually takes 10&ndash;20 seconds</div>
+</div>
 <div id="error-box" style="display:none">
   <div class="err-card">
     <h2>Report unavailable</h2>
@@ -61,6 +77,41 @@ _SHELL = """<!DOCTYPE html>
 <iframe id="report-frame" style="display:none;width:100%;border:none;min-height:calc(100vh - 54px)">
 </iframe>
 <script>
+  const LOAD_MSGS = [
+    ["Connecting to HubSpot…",        "Pulling your latest account data"],
+    ["Crunching the numbers…",         "Counting retailers, checking activations"],
+    ["Scanning retailer accounts…",    "Matching accounts to territories"],
+    ["Checking activation status…",    "This usually takes 10–20 seconds"],
+    ["Almost there…",                  "Building your report now"],
+    ["Finalizing the report…",         "Just a few more seconds"],
+  ];
+
+  let _msgTimer = null;
+  function startLoadingMessages(startIdx) {{
+    let i = startIdx || 0;
+    const msgEl = document.getElementById('loader-msg');
+    const subEl = document.getElementById('loader-sub');
+    function cycle() {{
+      if (!msgEl) return;
+      const [h, s] = LOAD_MSGS[i % LOAD_MSGS.length];
+      msgEl.textContent = h;
+      subEl.textContent = s;
+      i++;
+      _msgTimer = setTimeout(cycle, 3500);
+    }}
+    cycle();
+  }}
+  function stopLoadingMessages() {{
+    if (_msgTimer) {{ clearTimeout(_msgTimer); _msgTimer = null; }}
+  }}
+  function showLoading(startIdx) {{
+    stopLoadingMessages();
+    document.getElementById('loading').style.display = 'block';
+    document.getElementById('error-box').style.display = 'none';
+    document.getElementById('report-frame').style.display = 'none';
+    startLoadingMessages(startIdx);
+  }}
+
   async function getToken() {{
     try {{
       const client = await auth0.createAuth0Client({{
@@ -75,7 +126,8 @@ _SHELL = """<!DOCTYPE html>
     }} catch {{ window.location.href = "/"; return null; }}
   }}
 
-  async function loadReport() {{
+  async function loadReport(startMsgIdx) {{
+    showLoading(startMsgIdx || 0);
     const token = await getToken();
     if (!token) return;
     try {{
@@ -83,6 +135,7 @@ _SHELL = """<!DOCTYPE html>
         headers: {{ 'Authorization': 'Bearer ' + token }}
       }});
       if (!resp.ok) {{
+        stopLoadingMessages();
         document.getElementById('loading').style.display = 'none';
         document.getElementById('error-msg').textContent = 'Error ' + resp.status + ' — report unavailable.';
         document.getElementById('error-box').style.display = 'block';
@@ -94,10 +147,12 @@ _SHELL = """<!DOCTYPE html>
       const frame = document.getElementById('report-frame');
       frame.src = url;
       frame.onload = () => {{
+        stopLoadingMessages();
         document.getElementById('loading').style.display = 'none';
         frame.style.display = 'block';
       }};
     }} catch(e) {{
+      stopLoadingMessages();
       document.getElementById('loading').style.display = 'none';
       document.getElementById('error-msg').textContent = 'Network error: ' + e.message;
       document.getElementById('error-box').style.display = 'block';
@@ -115,7 +170,8 @@ _SHELL = """<!DOCTYPE html>
         method: 'POST',
         headers: {{ 'Authorization': 'Bearer ' + token }}
       }});
-      setTimeout(() => loadReport().then(() => {{
+      // Show loading with a "refresh" message set starting mid-rotation
+      setTimeout(() => loadReport(2).then(() => {{
         btn.textContent = '↻ Refresh';
         btn.disabled = false;
       }}), 8000);
