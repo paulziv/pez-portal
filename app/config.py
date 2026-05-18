@@ -25,7 +25,7 @@ APP_REGISTRY = [
     {"slug": "truage_account", "title": "TruAge Account Manager",
      "description": "Account manager performance and pipeline report.",
      "icon": "📋", "color": "#b36b00",
-     "url": "/apps/truage-account/", "external": False},
+     "url": "https://nacstam.up.railway.app", "external": True},
     {"slug": "stock", "title": "Market Dashboard",
      "description": "Deribit market data — instruments, order book, price tracking.",
      "icon": "📈", "color": "#6741d9",
