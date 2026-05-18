@@ -52,41 +52,84 @@ _SHELL = """<!DOCTYPE html>
   </div>
 </header>
 <div id="loading">Loading report&hellip;</div>
-<div id="error-box">
+<div id="error-box" style="display:none">
   <div class="err-card">
     <h2>Report unavailable</h2>
     <p id="error-msg">The activation report service could not be reached. Try again in a moment.</p>
   </div>
 </div>
-<iframe id="report-frame" style="display:none"
-        src="/apps/truage-activation/proxy"
-        onload="frameLoaded()" onerror="frameError()">
+<iframe id="report-frame" style="display:none;width:100%;border:none;min-height:calc(100vh - 54px)">
 </iframe>
 <script>
-  function frameLoaded(){{
-    document.getElementById('loading').style.display='none';
-    document.getElementById('report-frame').style.display='block';
+  async function getToken() {{
+    try {{
+      const client = await auth0.createAuth0Client({{
+        domain: "pezdev.us.auth0.com",
+        clientId: "4X6INHXnVCqb4M1KqUTVK9vDBhzT0q5d",
+        authorizationParams: {{ redirect_uri: window.location.origin, scope: "openid profile email" }},
+        cacheLocation: "localstorage",
+      }});
+      if (!(await client.isAuthenticated())) {{ window.location.href = "/"; return null; }}
+      const claims = await client.getIdTokenClaims();
+      return claims ? claims.__raw : null;
+    }} catch {{ window.location.href = "/"; return null; }}
   }}
-  function frameError(){{
-    document.getElementById('loading').style.display='none';
-    document.getElementById('error-box').style.display='block';
+
+  async function loadReport() {{
+    const token = await getToken();
+    if (!token) return;
+    try {{
+      const resp = await fetch('/apps/truage-activation/proxy', {{
+        headers: {{ 'Authorization': 'Bearer ' + token }}
+      }});
+      if (!resp.ok) {{
+        document.getElementById('loading').style.display = 'none';
+        document.getElementById('error-msg').textContent = 'Error ' + resp.status + ' — report unavailable.';
+        document.getElementById('error-box').style.display = 'block';
+        return;
+      }}
+      const html = await resp.text();
+      const blob = new Blob([html], {{type: 'text/html'}});
+      const url  = URL.createObjectURL(blob);
+      const frame = document.getElementById('report-frame');
+      frame.src = url;
+      frame.onload = () => {{
+        document.getElementById('loading').style.display = 'none';
+        frame.style.display = 'block';
+      }};
+    }} catch(e) {{
+      document.getElementById('loading').style.display = 'none';
+      document.getElementById('error-msg').textContent = 'Network error: ' + e.message;
+      document.getElementById('error-box').style.display = 'block';
+    }}
   }}
-  async function triggerRefresh(){{
+
+  async function triggerRefresh() {{
+    const token = await getToken();
+    if (!token) return;
     const btn = document.querySelector('.refresh-btn');
     btn.textContent = '⏳ Refreshing…';
     btn.disabled = true;
     try {{
-      await fetch('/apps/truage-activation/refresh', {{method:'POST'}});
-      setTimeout(() => {{
-        document.getElementById('report-frame').src = '/apps/truage-activation/proxy?t=' + Date.now();
+      await fetch('/apps/truage-activation/refresh', {{
+        method: 'POST',
+        headers: {{ 'Authorization': 'Bearer ' + token }}
+      }});
+      setTimeout(() => loadReport().then(() => {{
         btn.textContent = '↻ Refresh';
         btn.disabled = false;
-      }}, 5000);
+      }}), 8000);
     }} catch(e) {{
       btn.textContent = '↻ Refresh';
       btn.disabled = false;
     }}
   }}
+
+  // Bootstrap
+  const sdk = document.createElement('script');
+  sdk.src = 'https://cdn.auth0.com/js/auth0-spa-js/2.0/auth0-spa-js.production.js';
+  sdk.onload = loadReport;
+  document.head.appendChild(sdk);
 </script>
 </body>
 </html>"""
