@@ -50,7 +50,13 @@ def _verify_token(token: str) -> dict[str, Any]:
     domain = settings.auth0_domain
 
     jwks = _get_jwks(domain)
-    unverified_header = jwt.get_unverified_header(token)
+    try:
+        unverified_header = jwt.get_unverified_header(token)
+    except JWTError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=f"Malformed token: {exc}",
+        ) from exc
 
     # Find the matching key by kid
     rsa_key: dict[str, str] = {}
