@@ -18,9 +18,11 @@ _SHELL = """<!DOCTYPE html>
   <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1"/>
   <title>TruAge Activation Report</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
   <style>
     *{{box-sizing:border-box;margin:0;padding:0;}}
-    body{{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+    body{{font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
           background:#F5F0E8;min-height:100vh;}}
     header{{background:#00203F;padding:0 1.5rem;height:54px;display:flex;
             align-items:center;justify-content:space-between;}}
@@ -36,15 +38,16 @@ _SHELL = """<!DOCTYPE html>
     .refresh-btn:hover{{color:#36ECDE;border-color:#36ECDE;}}
     #report-frame{{width:100%;border:none;display:block;min-height:calc(100vh - 54px);}}
     #loading{{padding:4rem 2rem;text-align:center;}}
-    .loader-pulse{{
-      display:inline-block;width:48px;height:48px;margin-bottom:1.5rem;
+    .loader-ring{{
+      display:inline-block;width:44px;height:44px;margin-bottom:1.25rem;
+      border:4px solid #DDD8CE;border-top-color:#36ECDE;
+      border-radius:50%;animation:spin 0.9s linear infinite;
     }}
-    .loader-pulse svg{{animation:spin 1.2s linear infinite;}}
     @keyframes spin{{to{{transform:rotate(360deg);}}}}
-    .loader-msg{{font-size:1rem;font-weight:600;color:#2a3a50;margin-bottom:0.4rem;}}
+    .loader-msg{{font-size:1rem;font-weight:600;color:#1A2332;margin-bottom:0.35rem;}}
     .loader-sub{{font-size:0.82rem;color:#7A7060;}}
     #error-box{{display:none;padding:2rem 1.5rem;}}
-    .err-card{{background:#fff;border:1px solid #DDD8CE;border-left:6px solid #c92a2a;
+    .err-card{{background:#fff;border:1px solid #DDD8CE;border-left:6px solid #C0392B;
                border-radius:10px;padding:2rem;max-width:600px;margin:0 auto;}}
     .err-card h2{{font-size:1rem;color:#1A2332;margin-bottom:0.5rem;}}
     .err-card p{{font-size:0.85rem;color:#7A7060;}}
@@ -59,12 +62,7 @@ _SHELL = """<!DOCTYPE html>
   </div>
 </header>
 <div id="loading">
-  <div class="loader-pulse">
-    <svg viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg" width="48" height="48">
-      <circle cx="24" cy="24" r="20" stroke="#DDD8CE" stroke-width="4"/>
-      <path d="M24 4 A20 20 0 0 1 44 24" stroke="#36ECDE" stroke-width="4" stroke-linecap="round"/>
-    </svg>
-  </div>
+  <div class="loader-ring"></div>
   <div class="loader-msg" id="loader-msg">Connecting to HubSpot&hellip;</div>
   <div class="loader-sub" id="loader-sub">This usually takes 10&ndash;20 seconds</div>
 </div>
@@ -181,7 +179,10 @@ _SHELL = """<!DOCTYPE html>
     }}
   }}
 
-  // Bootstrap
+  // Start message rotation immediately — don't wait for Auth0 SDK download
+  startLoadingMessages(0);
+
+  // Bootstrap Auth0 SDK
   const sdk = document.createElement('script');
   sdk.src = 'https://cdn.auth0.com/js/auth0-spa-js/2.0/auth0-spa-js.production.js';
   sdk.onload = loadReport;
