@@ -81,13 +81,3 @@ class Settings(BaseSettings):
 @lru_cache
 def get_settings() -> Settings:
     return Settings()
-    github_token: str = Field("")
-    github_repo: str = Field("paulziv/pez-portal")
-    github_branch: str = Field("main")
-
-
-from functools import lru_cache
-
-@lru_cache
-def get_settings() -> Settings:
-    return Settings()
