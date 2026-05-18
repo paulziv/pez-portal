@@ -36,6 +36,8 @@
       display: flex; flex-direction: column;
       align-items: center; justify-content: center;
       z-index: 100;
+      overflow-y: auto;
+      padding: 2rem 1rem;
     }
     #overlay.hidden { display: none; }
 
@@ -127,6 +129,22 @@
       font-family: 'Inter', sans-serif;
     }
     .btn-logout-small:hover { border-color: var(--danger); color: var(--danger); }
+
+    /* Login page layout — video hero above card */
+    .login-wrapper {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 1.25rem;
+      width: 90%;
+      max-width: 525px;
+    }
+    .portal-video {
+      width: 100%;
+      border-radius: 12px;
+      display: block;
+      box-shadow: 0 4px 24px rgba(0,32,63,0.18);
+    }
 
     /* App shell */
     #shell { display: none; min-height: 100vh; flex-direction: column; }
@@ -278,19 +296,24 @@
     <div class="spinner"></div>
   </div>
 
-  <div id="state-login" class="login-card" style="display:none;">
-    <div class="portal-logo">
-      <img src="/static/logo.gif" alt="NACS Innovation">
-    </div>
-    <div class="login-card-body">
-      <h1>Innovation Portal</h1>
-      <p class="tagline">Internal app portal for NACS / TruAge tools.<br>Sign in to access your apps.</p>
-      <button class="btn-login" onclick="login()">
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
-          <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/>
-        </svg>
-        Sign in
-      </button>
+  <div id="state-login" class="login-wrapper" style="display:none;">
+    <video id="portal-video" class="portal-video" autoplay muted playsinline preload="auto">
+      <source src="/static/nacs_innovation_5s_prod.mp4" type="video/mp4">
+    </video>
+    <div class="login-card">
+      <div class="portal-logo">
+        <img src="/static/logo.gif" alt="NACS Innovation">
+      </div>
+      <div class="login-card-body">
+        <h1 id="login-greeting">Innovation Portal</h1>
+        <p class="tagline" id="login-tagline">Internal app portal for NACS / TruAge tools.<br>Sign in to access your apps.</p>
+        <button class="btn-login" onclick="login()">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/>
+          </svg>
+          Sign in
+        </button>
+      </div>
     </div>
   </div>
 
@@ -393,7 +416,10 @@
 
     document.getElementById("user-display").textContent = meData.name || meData.email;
     const firstName = (meData.name || meData.email).split(/[\s@]/)[0];
-    document.getElementById("welcome-heading").textContent = `Welcome back, ${firstName}`;
+    const heading = _greeting === 'Welcome back'
+      ? `Welcome back, ${firstName}`
+      : `${_greeting}, ${firstName}`;
+    document.getElementById("welcome-heading").textContent = heading;
 
     if ((meData.roles || []).includes("admin")) {
       document.getElementById("admin-link").style.display = "";
@@ -446,6 +472,50 @@
       .replace(/>/g, "&gt;")
       .replace(/"/g, "&quot;")
       .replace(/'/g, "&#39;");
+  }
+
+  // ── Smart greeting: time-of-day + welcome-back ───────────────────────────
+  const _greeting = (() => {
+    const today = new Date().toDateString();
+    const stored = localStorage.getItem('pez_visit_date');
+    let count = parseInt(localStorage.getItem('pez_visit_count') || '0', 10);
+    if (stored === today) {
+      count += 1;
+    } else {
+      count = 1;
+      localStorage.setItem('pez_visit_date', today);
+    }
+    localStorage.setItem('pez_visit_count', String(count));
+    if (count > 1) return 'Welcome back';
+    const h = new Date().getHours();
+    if (h >= 5  && h < 12) return 'Good morning';
+    if (h >= 12 && h < 17) return 'Good afternoon';
+    return 'Good evening';
+  })();
+
+  const _TAGLINES = {
+    'Good morning':   'Ready to start your day? Your apps are waiting.',
+    'Good afternoon': 'Pick up where you left off.',
+    'Good evening':   'Wrapping things up? Your apps are ready.',
+    'Welcome back':   "Good to have you back. Sign in to continue.",
+  };
+
+  document.getElementById('login-greeting').textContent = _greeting;
+  document.getElementById('login-tagline').innerHTML =
+    _TAGLINES[_greeting] || 'Internal app portal for NACS / TruAge tools.';
+
+  // ── Video: play 3× then freeze on last frame ─────────────────────────────
+  const _vid = document.getElementById('portal-video');
+  if (_vid) {
+    let _plays = 0;
+    _vid.addEventListener('ended', () => {
+      _plays++;
+      if (_plays < 3) {
+        _vid.currentTime = 0;
+        _vid.play();
+      }
+      // After 3rd play the browser holds the last frame automatically
+    });
   }
 
   initAuth();
