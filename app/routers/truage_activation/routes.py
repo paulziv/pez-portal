@@ -153,6 +153,34 @@ _SHELL = """<!DOCTYPE html>
     if (_msgTimer) {{ clearTimeout(_msgTimer); _msgTimer = null; }}
   }}
 
+  // ── Abort-cooldown guard ─────────────────────────────────────────────────
+  // Prevents a second request from trampling an in-flight one when the user
+  // navigates away mid-load and immediately returns.
+  const _TS_KEY = 'truage_act_fetch_ts';
+  const _COOLDOWN_MS = 30000;
+
+  function _markFetchStart() {{ localStorage.setItem(_TS_KEY, String(Date.now())); }}
+  function _markFetchDone()  {{ localStorage.removeItem(_TS_KEY); }}
+  function _cooldownSecs() {{
+    const ts = parseInt(localStorage.getItem(_TS_KEY) || '0', 10);
+    if (!ts) return 0;
+    return Math.max(0, Math.ceil((_COOLDOWN_MS - (Date.now() - ts)) / 1000));
+  }}
+
+  function showCooldown(secs) {{
+    showLoading(0);
+    const warn = document.getElementById('loader-warn');
+    warn.style.display = 'block';
+    let s = secs;
+    function tick() {{
+      warn.textContent = `A report was just requested. Waiting ${{s}}s before retrying to avoid conflicts…`;
+      if (s <= 0) {{ warn.style.display = 'none'; loadReport(0); return; }}
+      s--;
+      setTimeout(tick, 1000);
+    }}
+    tick();
+  }}
+
   // ── Step progression ──────────────────────────────────────────────────────
   // Steps go active at these offsets (ms); step N-1 is marked done when N goes active
   const _STEP_MS = [600, 9000, 19000, 30000, 41000];
@@ -219,6 +247,7 @@ _SHELL = """<!DOCTYPE html>
     showLoading(startMsgIdx || 0);
     const token = await getToken();
     if (!token) return;
+    _markFetchStart();
     try {{
       // 90-second client-side hard timeout (Railway cold-starts can be slow)
       const controller = new AbortController();
@@ -229,6 +258,7 @@ _SHELL = """<!DOCTYPE html>
       }});
       clearTimeout(fetchTimeout);
       if (!resp.ok) {{
+        _markFetchDone();
         stopLoadingMessages(); _stopSteps();
         document.getElementById('loading').style.display = 'none';
         document.getElementById('error-msg').textContent = 'Error ' + resp.status + ' — report unavailable.';
@@ -241,11 +271,13 @@ _SHELL = """<!DOCTYPE html>
       const frame = document.getElementById('report-frame');
       frame.src = url;
       frame.onload = () => {{
+        _markFetchDone();
         stopLoadingMessages(); _stopSteps();
         document.getElementById('loading').style.display = 'none';
         frame.style.display = 'block';
       }};
     }} catch(e) {{
+      _markFetchDone();
       stopLoadingMessages(); _stopSteps();
       document.getElementById('loading').style.display = 'none';
       const msg = e.name === 'AbortError'
@@ -282,10 +314,13 @@ _SHELL = """<!DOCTYPE html>
   startLoadingMessages(0);
   _startSteps();
 
-  // Bootstrap Auth0 SDK
+  // Bootstrap Auth0 SDK — then check cooldown before firing loadReport
   const sdk = document.createElement('script');
   sdk.src = 'https://cdn.auth0.com/js/auth0-spa-js/2.0/auth0-spa-js.production.js';
-  sdk.onload = loadReport;
+  sdk.onload = () => {{
+    const rem = _cooldownSecs();
+    if (rem > 0) {{ showCooldown(rem); }} else {{ loadReport(); }}
+  }};
   document.head.appendChild(sdk);
 </script>
 </body>
