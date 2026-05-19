@@ -31,9 +31,9 @@ APP_REGISTRY = [
      "icon": "📖", "color": "#0c6e5c",
      "url": "https://nacstam.up.railway.app/dictionary", "external": True},
     {"slug": "stock", "title": "Market Dashboard",
-     "description": "Deribit market data — instruments, order book, price tracking.",
+     "description": "Private market terminal — live quotes, podcast intel, news synthesis, strategy lab, and AI council.",
      "icon": "📈", "color": "#6741d9",
-     "url": "/apps/stock/", "external": False},
+     "url": "https://marketmaker.mytruage.org", "external": True},
 ]
 
 # "admin" role maps to the admin card above; only users with this slug see it.
