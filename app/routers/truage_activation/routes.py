@@ -330,7 +330,7 @@ _SHELL = """<!DOCTYPE html>
 @router.get("/", response_class=HTMLResponse, include_in_schema=False)
 async def ui() -> str:
     """Portal shell — served publicly; client-side Auth0 check gates the /proxy call."""
-    return _SHELL
+    return _SHELL.replace('{{', '{').replace('}}', '}')
 
 
 @router.get("/proxy", response_class=HTMLResponse, include_in_schema=False)
