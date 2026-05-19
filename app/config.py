@@ -33,7 +33,7 @@ APP_REGISTRY = [
     {"slug": "stock", "title": "Market Dashboard",
      "description": "Private market terminal — live quotes, podcast intel, news synthesis, strategy lab, and AI council.",
      "icon": "📈", "color": "#6741d9",
-     "url": "https://marketmaker.mytruage.org", "external": True},
+     "url": "https://stock-tracker-production-0582.up.railway.app", "external": True},
 ]
 
 # "admin" role maps to the admin card above; only users with this slug see it.
