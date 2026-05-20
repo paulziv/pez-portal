@@ -369,7 +369,7 @@ async def daily_content(user: UserClaims = Depends(_require)) -> HTMLResponse:
 @router.get("/proxy", response_class=HTMLResponse, include_in_schema=False)
 async def proxy_report(user: UserClaims = Depends(_require)) -> HTMLResponse:
     try:
-        async with httpx.AsyncClient(timeout=90) as client:
+        async with httpx.AsyncClient(timeout=90, follow_redirects=True) as client:
             resp = await client.get(f"{_UPSTREAM}/")
         if resp.status_code not in (200, 202):
             raise HTTPException(status_code=502, detail="Upstream returned non-200")
@@ -399,7 +399,7 @@ async def status(user: UserClaims = Depends(_require)) -> dict:
 async def run_daily() -> str:
     """Fetch upstream report and populate the daily cache. Called by the cron endpoint."""
     try:
-        async with httpx.AsyncClient(timeout=90) as client:
+        async with httpx.AsyncClient(timeout=90, follow_redirects=True) as client:
             resp = await client.get(f"{_UPSTREAM}/")
         if resp.status_code == 200:
             account_cache.set(resp.text)
