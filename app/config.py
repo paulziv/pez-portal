@@ -30,8 +30,8 @@ APP_REGISTRY = [
      "description": "HubSpot field definitions, owner roster, and data standards.",
      "icon": "📖", "color": "#0c6e5c",
      "url": "https://nacstam.up.railway.app/dictionary", "external": True},
-    {"slug": "stock", "title": "Market Dashboard",
-     "description": "Private market terminal — live quotes, podcast intel, news synthesis, strategy lab, and AI council.",
+    {"slug": "stock", "title": "MarketMaker",
+     "description": "Market intelligence terminal — live quotes, news synthesis, strategy lab, and AI council. Read-only; no trading capability.",
      "icon": "📈", "color": "#6741d9",
      "url": "https://stock-tracker-production-0582.up.railway.app", "external": True},
 ]

@@ -73,7 +73,7 @@ Per-app accent colors (card left border):
 - TruAge Activation: `#087f5b` teal-green
 - TruAge Account:    `#b36b00` amber
 - TruAge Dictionary: `#0c6e5c` dark teal
-- Market Dashboard:  `#6741d9` purple (card) / `#36ECDE` mint (dashboard UI)
+- MarketMaker:       `#6741d9` purple (card) / `#36ECDE` mint (dashboard UI)
 
 ## User / Role Management
 
@@ -108,6 +108,21 @@ Then push to GitHub main.
 3. Create `app/routers/<slug>/routes.py` with router
 4. Register router in `app/main.py`
 5. Add a test to `tests/test_routes.py`
+
+## MarketMaker architecture (security boundary)
+
+MarketMaker (`paulziv/marketmaker` → `stock-tracker-production-0582.up.railway.app`) is a
+**read-only** subset of the full stock-tracker application.
+
+- **MarketMaker (deployed on Railway)**: market intelligence only — live quotes, news
+  synthesis, AI council of bots, strategy lab, ML/analysis. Zero trading capability.
+- **stock-tracker (NOT on Railway)**: full trading platform — includes everything in
+  MarketMaker plus order execution, brokerage API credentials, and transaction management.
+  Kept off Railway intentionally: if the Railway service were compromised, an attacker
+  could not execute trades or access financial accounts.
+
+The Railway service slug is `stock` for role compatibility. The GitHub repo `paulziv/marketmaker`
+is the source of truth for what is deployed — **stock-tracker code must never be pushed there.**
 
 ## BenchPoint integration (open items)
 
