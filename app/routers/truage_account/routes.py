@@ -406,20 +406,23 @@ async def status(user: UserClaims = Depends(_require)) -> dict:
 
 
 async def run_daily() -> str:
-    """Trigger upstream refresh, wait for it to complete, then cache the result."""
+    """Trigger upstream refresh then poll until a full report is ready, then cache it."""
     import asyncio
     try:
         async with httpx.AsyncClient(timeout=15, follow_redirects=True) as client:
             await client.post(f"{_UPSTREAM}/refresh")
     except Exception:
-        pass  # best-effort — proceed to fetch even if refresh trigger fails
-    await asyncio.sleep(75)  # wait for HubSpot pull to complete
-    try:
-        async with httpx.AsyncClient(timeout=90, follow_redirects=True) as client:
-            resp = await client.get(f"{_UPSTREAM}/")
-        if resp.status_code == 200:
-            account_cache.set(_inject_base(resp.text))
-            return "ok"
-        return f"upstream_status_{resp.status_code}"
-    except Exception as exc:
-        return f"error: {exc}"
+        pass
+    # Poll every 20s for up to ~5 minutes. Real reports are >10 KB;
+    # "creating report" placeholders are a few hundred bytes.
+    for attempt in range(15):
+        await asyncio.sleep(20)
+        try:
+            async with httpx.AsyncClient(timeout=30, follow_redirects=True) as client:
+                resp = await client.get(f"{_UPSTREAM}/")
+            if resp.status_code == 200 and len(resp.text) > 10_000:
+                account_cache.set(_inject_base(resp.text))
+                return f"ok (attempt {attempt + 1})"
+        except Exception:
+            pass
+    return "error: upstream report not ready after retries"
