@@ -35,25 +35,31 @@ _CONFIG_PATH = "app/config.py"
 
 class DeployPayload(BaseModel):
     users: dict[str, list[str]]
+    email_subscriptions: dict[str, list[str]] = {}
 
 
 # ── Config patching helpers ───────────────────────────────────────────────────
 
-def _build_user_roles_block(users: dict[str, list[str]]) -> str:
-    """Render USER_ROLES as a Python literal block."""
-    lines = ["USER_ROLES: dict[str, list[str]] = {"]
-    for email in sorted(users.keys()):
-        slugs = users[email]
-        lines.append(f'    "{email}": [')
-        for slug in slugs:
-            lines.append(f'        "{slug}",')
+def _build_dict_block(var_name: str, data: dict[str, list[str]]) -> str:
+    """Render a dict[str, list[str]] as a Python literal block."""
+    lines = [f'{var_name}: dict[str, list[str]] = {{']
+    for key in sorted(data.keys()):
+        values = data[key]
+        lines.append(f'    "{key}": [')
+        for v in values:
+            lines.append(f'        "{v}",')
         lines.append("    ],")
     lines.append("}")
     return "\n".join(lines)
 
 
-def _patch_config_py(source: str, new_users: dict[str, list[str]]) -> str:
-    """Replace the USER_ROLES block in config.py source with new values."""
+def _build_user_roles_block(users: dict[str, list[str]]) -> str:
+    return _build_dict_block("USER_ROLES", users)
+
+
+def _patch_config_py(source: str, new_users: dict[str, list[str]],
+                     new_subs: dict[str, list[str]] | None = None) -> str:
+    """Replace USER_ROLES (and optionally EMAIL_SUBSCRIPTIONS) in config.py."""
     new_block = _build_user_roles_block(new_users)
     patched, n = re.subn(
         r'USER_ROLES: dict\[str, list\[str\]\] = \{.*?\}',
@@ -63,13 +69,24 @@ def _patch_config_py(source: str, new_users: dict[str, list[str]]) -> str:
     )
     if n != 1:
         raise ValueError(f"Expected to replace 1 USER_ROLES block, found {n}")
+    if new_subs is not None:
+        subs_block = _build_dict_block("EMAIL_SUBSCRIPTIONS", new_subs)
+        patched, m = re.subn(
+            r'EMAIL_SUBSCRIPTIONS: dict\[str, list\[str\]\] = \{.*?\}',
+            lambda _: subs_block,
+            patched,
+            flags=re.DOTALL,
+        )
+        if m != 1:
+            raise ValueError(f"Expected to replace 1 EMAIL_SUBSCRIPTIONS block, found {m}")
     return patched
 
 
 # ── GitHub commit ─────────────────────────────────────────────────────────────
 
-async def _github_commit(new_users: dict[str, list[str]]) -> str:
-    """Fetch config.py from GitHub, patch USER_ROLES, commit back.
+async def _github_commit(new_users: dict[str, list[str]],
+                         new_subs: dict[str, list[str]] | None = None) -> str:
+    """Fetch config.py from GitHub, patch USER_ROLES + EMAIL_SUBSCRIPTIONS, commit back.
 
     Returns the short commit SHA on success.
     Raises HTTPException on any failure.
@@ -104,7 +121,7 @@ async def _github_commit(new_users: dict[str, list[str]]) -> str:
 
         # ── Patch ─────────────────────────────────────────────────────────
         try:
-            new_source = _patch_config_py(current_source, new_users)
+            new_source = _patch_config_py(current_source, new_users, new_subs)
         except ValueError as exc:
             raise HTTPException(status_code=500, detail=str(exc)) from exc
 
@@ -118,8 +135,9 @@ async def _github_commit(new_users: dict[str, list[str]]) -> str:
             ) from exc
 
         # ── Commit ────────────────────────────────────────────────────────
+        msg = "admin: update USER_ROLES" + (" + EMAIL_SUBSCRIPTIONS" if new_subs is not None else "") + " via pez-portal admin panel"
         r = await client.put(url, headers=headers, json={
-            "message": "admin: update USER_ROLES via pez-portal admin panel",
+            "message": msg,
             "content": base64.b64encode(new_source.encode()).decode(),
             "sha": current_sha,
             "branch": settings.github_branch,
@@ -145,10 +163,11 @@ async def ui() -> str:
 
 @router.get("/api/config")
 async def get_config(_user: UserClaims = Depends(_require)) -> dict:
-    """Return current USER_ROLES and APP_REGISTRY as JSON."""
+    """Return current USER_ROLES, EMAIL_SUBSCRIPTIONS and APP_REGISTRY as JSON."""
     return {
         "users": _cfg.USER_ROLES,
         "apps": [a for a in _cfg.APP_REGISTRY],
+        "email_subscriptions": _cfg.EMAIL_SUBSCRIPTIONS,
     }
 
 
@@ -157,12 +176,9 @@ async def deploy(
     payload: DeployPayload,
     _user: UserClaims = Depends(_require),
 ) -> dict:
-    """Commit updated USER_ROLES to GitHub and update in-memory state immediately.
-
-    Changes take effect in the running container right away; Railway redeploys
-    from the GitHub commit in ~2 minutes so the change survives restarts.
-    """
+    """Commit updated USER_ROLES + EMAIL_SUBSCRIPTIONS to GitHub."""
     new_users = {k.strip().lower(): v for k, v in payload.users.items()}
+    new_subs  = {k.strip().lower(): v for k, v in payload.email_subscriptions.items()}
 
     # Validate slugs
     valid_slugs = {a["slug"] for a in _cfg.APP_REGISTRY} | {"admin"}
@@ -175,11 +191,13 @@ async def deploy(
             )
 
     # Commit to GitHub
-    commit_sha = await _github_commit(new_users)
+    commit_sha = await _github_commit(new_users, new_subs)
 
-    # Update in-memory immediately (same process, same dict object)
+    # Update in-memory immediately
     _cfg.USER_ROLES.clear()
     _cfg.USER_ROLES.update(new_users)
+    _cfg.EMAIL_SUBSCRIPTIONS.clear()
+    _cfg.EMAIL_SUBSCRIPTIONS.update(new_subs)
 
     settings = get_settings()
     return {
@@ -255,6 +273,14 @@ _ADMIN_HTML = """<!DOCTYPE html>
     .apps-list{display:flex;flex-wrap:wrap;gap:0.5rem;}
     .app-chip{background:var(--panel2);border:1px solid var(--border);
               border-radius:4px;padding:0.2rem 0.6rem;font-size:0.78rem;color:var(--muted);}
+    .dist-report{margin-bottom:1.1rem;}
+    .dist-report-title{font-size:0.88rem;font-weight:600;color:var(--text);margin-bottom:0.55rem;
+                       display:flex;align-items:center;gap:0.4rem;}
+    .dist-row{display:flex;align-items:center;gap:0.6rem;padding:0.3rem 0;
+              border-bottom:1px solid rgba(51,65,85,0.3);font-size:0.83rem;}
+    .dist-row:last-child{border-bottom:none;}
+    .dist-email{flex:1;color:var(--text);}
+    .dist-no-access{color:var(--muted);font-style:italic;font-size:0.78rem;}
     .spinner{display:inline-block;width:14px;height:14px;
              border:2px solid var(--border);border-top-color:var(--accent);
              border-radius:50%;animation:spin 0.8s linear infinite;vertical-align:middle;}
@@ -303,12 +329,22 @@ _ADMIN_HTML = """<!DOCTYPE html>
       Adding new apps requires a code change (new router + config.py entry + redeploy).
     </p>
   </div>
+
+  <!-- Report Distribution -->
+  <div class="section">
+    <h2>📬 Report Distribution</h2>
+    <p style="font-size:0.78rem;color:var(--muted);margin-bottom:1rem;">
+      Daily reports are emailed automatically after the 7 AM cron run. Toggle per user below.
+    </p>
+    <div id="dist-container"></div>
+  </div>
 </main>
 
 <script>
   // ── State ──────────────────────────────────────────────────────────────────
-  let _config  = { users: {}, apps: [] };   // last saved state from server
-  let _pending = {};                         // local working copy
+  let _config  = { users: {}, apps: [], email_subscriptions: {} };
+  let _pending = {};       // users working copy
+  let _pendingSubs = {};   // email_subscriptions working copy
   let _dirty   = false;
 
   const APP_SLUGS = [];  // filled after config load (excludes "admin")
@@ -323,6 +359,7 @@ _ADMIN_HTML = """<!DOCTYPE html>
 
     _config = await resp.json();
     _pending = deepClone(_config.users);
+    _pendingSubs = deepClone(_config.email_subscriptions || {});
 
     // Collect app slugs (exclude "admin" — it's a meta-role)
     APP_SLUGS.length = 0;
@@ -332,6 +369,7 @@ _ADMIN_HTML = """<!DOCTYPE html>
 
     renderApps();
     renderTable();
+    renderDistribution();
   }
 
   // ── Token (from Auth0 SDK stored in localStorage) ─────────────────────────
@@ -390,6 +428,44 @@ _ADMIN_HTML = """<!DOCTYPE html>
       ).join("");
   }
 
+  function renderDistribution() {
+    const shippable = (_config.apps || []).filter(a => a.has_daily);
+    if (!shippable.length) {
+      document.getElementById("dist-container").innerHTML =
+        '<p style="font-size:0.82rem;color:var(--muted);">No shippable reports configured.</p>';
+      return;
+    }
+    document.getElementById("dist-container").innerHTML = shippable.map(app => {
+      // Users who have access to this report
+      const eligible = Object.keys(_pending).sort().filter(email =>
+        (_pending[email] || []).includes(app.slug)
+      );
+      const rows = eligible.length
+        ? eligible.map(email => {
+            const subscribed = (_pendingSubs[email] || []).includes(app.slug);
+            return `<div class="dist-row">
+              <input type="checkbox" ${subscribed ? "checked" : ""}
+                style="width:15px;height:15px;accent-color:var(--accent);cursor:pointer;"
+                onchange="toggleSub('${escAttr(email)}','${escAttr(app.slug)}',this.checked)"/>
+              <span class="dist-email">${escHtml(email)}</span>
+            </div>`;
+          }).join("")
+        : `<p class="dist-no-access">No users have access to this report yet.</p>`;
+      return `<div class="dist-report">
+        <div class="dist-report-title">${escHtml(app.icon || "📄")} ${escHtml(app.title)}</div>
+        ${rows}
+      </div>`;
+    }).join("");
+  }
+
+  function toggleSub(email, slug, checked) {
+    if (!_pendingSubs[email]) _pendingSubs[email] = [];
+    const list = _pendingSubs[email];
+    if (checked && !list.includes(slug)) list.push(slug);
+    if (!checked) { const i = list.indexOf(slug); if (i > -1) list.splice(i, 1); }
+    markDirty();
+  }
+
   // ── User edits ─────────────────────────────────────────────────────────────
   function toggleApp(email, slug, checked) {
     const slugs = _pending[email] || [];
@@ -408,19 +484,24 @@ _ADMIN_HTML = """<!DOCTYPE html>
     input.value = "";
     markDirty();
     renderTable();
+    renderDistribution();
   }
 
   function removeUser(email) {
     if (!confirm(`Remove ${email}?`)) return;
     delete _pending[email];
+    delete _pendingSubs[email];
     markDirty();
     renderTable();
+    renderDistribution();
   }
 
   function discardChanges() {
     _pending = deepClone(_config.users);
+    _pendingSubs = deepClone(_config.email_subscriptions || {});
     markClean();
     renderTable();
+    renderDistribution();
   }
 
   // ── Dirty state ───────────────────────────────────────────────────────────
@@ -457,7 +538,7 @@ _ADMIN_HTML = """<!DOCTYPE html>
     try {
       const resp = await apiFetch("/apps/admin/api/deploy", token, {
         method: "POST",
-        body: JSON.stringify({ users: payload }),
+        body: JSON.stringify({ users: payload, email_subscriptions: deepClone(_pendingSubs) }),
       });
       const data = await resp.json();
       if (!resp.ok) {
@@ -468,9 +549,10 @@ _ADMIN_HTML = """<!DOCTYPE html>
           `✓ Committed <a href="${escHtml(data.commit_url)}" target="_blank" rel="noopener" style="color:var(--ok)">${data.commit_sha}</a> — ${escHtml(data.message)}`,
           true
         );
-        _config = { ..._config, users: deepClone(payload) };
+        _config = { ..._config, users: deepClone(payload), email_subscriptions: deepClone(_pendingSubs) };
         markClean();
         renderTable();
+        renderDistribution();
       }
     } catch (e) {
       showStatus("Network error: " + e.message, false);

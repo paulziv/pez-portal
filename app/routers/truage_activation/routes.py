@@ -10,6 +10,7 @@ from fastapi.responses import HTMLResponse, JSONResponse
 
 from app.auth import UserClaims, require_app
 from app.daily_cache import activation_cache
+from app.email_service import send_report
 
 router = APIRouter(prefix="/apps/truage-activation", tags=["truage-activation"])
 _require = require_app("truage_activation")
@@ -56,7 +57,7 @@ _DAILY_SHELL = """<!DOCTYPE html>
   <span class="hdr-title">&#x1FAA6; Activation Report &mdash; Daily Report</span>
   <div class="hdr-right">
     <span class="hdr-meta" id="gen-time"></span>
-    <button class="hdr-btn" id="btn-email" disabled title="Coming soon — email forwarding">&#x2709; Forward</button>
+    <button class="hdr-btn" id="btn-email" disabled onclick="forwardReport()" title="Email this report to yourself">&#x2709; Forward</button>
     <button class="hdr-btn" id="btn-download" disabled onclick="downloadReport()">&#x2193; Download</button>
     <a class="back" href="/">&#x2190; Portal</a>
   </div>
@@ -93,6 +94,7 @@ _DAILY_SHELL = """<!DOCTYPE html>
       const html = await r.text();
       _reportHtml = html;
       document.getElementById('btn-download').disabled = false;
+      document.getElementById('btn-email').disabled = false;
       const frame = document.getElementById('report-frame');
       frame.src = URL.createObjectURL(new Blob([html], {type:'text/html'}));
       frame.onload = () => {
@@ -112,6 +114,32 @@ _DAILY_SHELL = """<!DOCTYPE html>
     document.body.appendChild(a); a.click(); document.body.removeChild(a);
   }
   let _reportHtml = null;
+  async function forwardReport() {
+    const btn = document.getElementById('btn-email');
+    btn.textContent = '⏳…'; btn.disabled = true;
+    try {
+      const client = await auth0.createAuth0Client({
+        domain:"pezdev.us.auth0.com", clientId:"4X6INHXnVCqb4M1KqUTVK9vDBhzT0q5d",
+        authorizationParams:{redirect_uri:window.location.origin,scope:"openid profile email"},
+        cacheLocation:"localstorage",
+      });
+      const claims = await client.getIdTokenClaims();
+      const token = claims ? claims.__raw : null;
+      if (!token) { btn.textContent = '✉ Forward'; btn.disabled = false; return; }
+      const r = await fetch('/apps/truage-activation/email', {method:'POST',headers:{'Authorization':'Bearer '+token}});
+      const data = await r.json();
+      if (r.ok) {
+        btn.textContent = '✓ Sent';
+        setTimeout(() => { btn.textContent = '✉ Forward'; btn.disabled = false; }, 3000);
+      } else {
+        btn.textContent = '✗ Error';
+        setTimeout(() => { btn.textContent = '✉ Forward'; btn.disabled = false; }, 3000);
+      }
+    } catch(e) {
+      btn.textContent = '✗ Error';
+      setTimeout(() => { btn.textContent = '✉ Forward'; btn.disabled = false; }, 3000);
+    }
+  }
   const sdk = document.createElement('script');
   sdk.src = 'https://cdn.auth0.com/js/auth0-spa-js/2.0/auth0-spa-js.production.js';
   sdk.onload = load;
@@ -193,7 +221,7 @@ _SHELL = """<!DOCTYPE html>
   <span class="hdr-title">&#x1FAA6; TruAge Activation Report</span>
   <div class="hdr-right">
     <button class="refresh-btn" onclick="triggerRefresh()" title="Fetch latest data from HubSpot">&#x21BB; Refresh</button>
-    <button class="hdr-btn" id="btn-email" disabled title="Coming soon — email forwarding">&#x2709; Forward</button>
+    <button class="hdr-btn" id="btn-email" disabled onclick="forwardReport()" title="Email this report to yourself">&#x2709; Forward</button>
     <button class="hdr-btn" id="btn-download" disabled onclick="downloadReport()">&#x2193; Download</button>
     <a class="back" href="/">&#x2190; Portal</a>
   </div>
@@ -384,6 +412,7 @@ _SHELL = """<!DOCTYPE html>
       const html = await resp.text();
       _reportHtml = html;
       document.getElementById('btn-download').disabled = false;
+      document.getElementById('btn-email').disabled = false;
       const blob = new Blob([html], {{type: 'text/html'}});
       const url  = URL.createObjectURL(blob);
       const frame = document.getElementById('report-frame');
@@ -415,9 +444,30 @@ _SHELL = """<!DOCTYPE html>
     document.body.appendChild(a); a.click(); document.body.removeChild(a);
   }}
 
+  async function forwardReport() {{
+    const btn = document.getElementById('btn-email');
+    btn.textContent = '⏳…'; btn.disabled = true;
+    const token = await getToken();
+    if (!token) {{ btn.textContent = '✉ Forward'; btn.disabled = false; return; }}
+    try {{
+      const r = await fetch('/apps/truage-activation/email', {{method:'POST',headers:{{'Authorization':'Bearer '+token}}}});
+      if (r.ok) {{
+        btn.textContent = '✓ Sent';
+        setTimeout(() => {{ btn.textContent = '✉ Forward'; btn.disabled = false; }}, 3000);
+      }} else {{
+        btn.textContent = '✗ Error';
+        setTimeout(() => {{ btn.textContent = '✉ Forward'; btn.disabled = false; }}, 3000);
+      }}
+    }} catch(e) {{
+      btn.textContent = '✗ Error';
+      setTimeout(() => {{ btn.textContent = '✉ Forward'; btn.disabled = false; }}, 3000);
+    }}
+  }}
+
   async function triggerRefresh() {{
     _reportHtml = null;
     document.getElementById('btn-download').disabled = true;
+    document.getElementById('btn-email').disabled = true;
     const token = await getToken();
     if (!token) return;
     const btn = document.querySelector('.refresh-btn');
@@ -510,6 +560,25 @@ async def daily_content(user: UserClaims = Depends(_require)) -> HTMLResponse:
     )
 
 
+@router.post("/email")
+async def email_report(user: UserClaims = Depends(_require)) -> JSONResponse:
+    """Send the cached daily report to the requesting user's email."""
+    if not activation_cache.available:
+        raise HTTPException(status_code=503, detail="Daily report not yet available — run the cron first.")
+    from datetime import date
+    filename = f"truage-activation-{date.today()}.html"
+    result = send_report(
+        to=user.email,
+        report_title="TruAge Activation Report",
+        html_content=activation_cache.html,
+        filename=filename,
+        generated_at=activation_cache.generated_at,
+    )
+    if not result["ok"]:
+        raise HTTPException(status_code=502, detail=result["error"])
+    return JSONResponse({"status": "sent", "to": user.email})
+
+
 @router.get("/api/status")
 async def status(user: UserClaims = Depends(_require)) -> dict:
     return {"app": "truage_activation", "upstream": _UPSTREAM, "user": user.email,
@@ -532,7 +601,26 @@ async def run_daily() -> str:
                 resp = await client.get(f"{_UPSTREAM}/")
             if resp.status_code == 200 and len(resp.text) > 10_000:
                 activation_cache.set(_inject_base(resp.text))
+                _send_subscribed_emails("truage_activation", "TruAge Activation Report")
                 return f"ok (attempt {attempt + 1})"
         except Exception:
             pass
     return "error: upstream report not ready after retries"
+
+
+def _send_subscribed_emails(slug: str, title: str) -> None:
+    """Fire-and-forget: email all subscribed users for this report."""
+    import app.config as _cfg
+    from datetime import date
+    subscribers = [e for e, slugs in _cfg.EMAIL_SUBSCRIPTIONS.items() if slug in slugs]
+    if not subscribers or not activation_cache.available:
+        return
+    filename = f"{slug.replace('_', '-')}-{date.today()}.html"
+    for email in subscribers:
+        send_report(
+            to=email,
+            report_title=title,
+            html_content=activation_cache.html,
+            filename=filename,
+            generated_at=activation_cache.generated_at,
+        )

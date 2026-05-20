@@ -37,6 +37,9 @@ APP_REGISTRY = [
 ]
 
 # "admin" role maps to the admin card above; only users with this slug see it.
+# email → list of report slugs they're subscribed to for daily delivery
+EMAIL_SUBSCRIPTIONS: dict[str, list[str]] = {}
+
 USER_ROLES: dict[str, list[str]] = {
     "fgleeson@convenience.org": [
         "benchmark",
@@ -95,6 +98,8 @@ class Settings(BaseSettings):
     github_repo: str = Field("paulziv/pez-portal")
     github_branch: str = Field("main")
     cron_secret: str = Field("")
+    resend_api_key: str = Field("")
+    resend_from: str = Field("Innovation Portal <portal@nacsportal.up.railway.app>")
 
 
 @lru_cache
