@@ -14,10 +14,13 @@ from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Resp
 from fastapi.staticfiles import StaticFiles
 from pathlib import Path
 
+import asyncio
+
 from app.config import get_settings, APP_REGISTRY, USER_ROLES
+from app.daily_cache import account_cache, activation_cache
 from app.routers.admin.routes import router as admin_router
-from app.routers.truage_activation.routes import router as truage_activation_router
-from app.routers.truage_account.routes import router as truage_account_router
+from app.routers.truage_activation.routes import router as truage_activation_router, run_daily as run_activation_daily
+from app.routers.truage_account.routes import router as truage_account_router, run_daily as run_account_daily
 from app.routers.stock.routes import router as stock_router
 
 _STATIC_DIR = Path(__file__).parent / "static"
@@ -77,6 +80,30 @@ def create_app() -> FastAPI:
     @app.get("/health", include_in_schema=False)
     async def health() -> dict:
         return {"status": "ok", "version": settings.app_version}
+
+    @app.get("/api/daily-status", include_in_schema=False)
+    async def daily_status() -> JSONResponse:
+        return JSONResponse({
+            "truage_account":    account_cache.to_status(),
+            "truage_activation": activation_cache.to_status(),
+        })
+
+    @app.post("/api/cron/run-daily", include_in_schema=False)
+    async def cron_run_daily(request: Request) -> JSONResponse:
+        if not settings.cron_secret:
+            return JSONResponse({"error": "CRON_SECRET not configured"}, status_code=503)
+        auth = request.headers.get("Authorization", "")
+        if auth != f"Bearer {settings.cron_secret}":
+            return JSONResponse({"error": "Unauthorized"}, status_code=401)
+        results = await asyncio.gather(
+            run_account_daily(),
+            run_activation_daily(),
+            return_exceptions=True,
+        )
+        return JSONResponse({
+            "truage_account":    str(results[0]),
+            "truage_activation": str(results[1]),
+        })
 
     @app.get("/", include_in_schema=False)
     async def portal() -> Response:

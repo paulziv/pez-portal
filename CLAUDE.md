@@ -149,3 +149,8 @@ git push origin main   # Railway auto-deploys
   and `GITHUB_REPO=paulziv/pez-portal` set on Railway.
 - **Railway auth**: use `RAILWAY_API_TOKEN` (not `RAILWAY_TOKEN`) for non-interactive
   CLI and GraphQL API access. Token from https://railway.com/account/tokens.
+- **Daily report cron**: add `CRON_SECRET` env var to pez-portal on Railway, then
+  create a Railway cron service that runs daily at 7 AM CT (13:00 UTC):
+  `curl -s -X POST https://nacsportal.up.railway.app/api/cron/run-daily -H "Authorization: Bearer $CRON_SECRET"`
+  Both truage_account and truage_activation reports are populated in one call.
+  In-memory cache — clears on redeploy, repopulated by next cron run.

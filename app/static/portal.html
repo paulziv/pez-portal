@@ -223,20 +223,26 @@
       background: var(--surface);
       border: 1px solid var(--border);
       border-radius: 10px;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      transition: box-shadow 0.15s, transform 0.12s;
+      border-left: 6px solid var(--card-color, var(--navy));
+    }
+    .app-card:hover {
+      box-shadow: 0 4px 20px rgba(0,32,63,0.1);
+      transform: translateY(-2px);
+    }
+    .card-body-link {
       padding: 1.5rem;
       text-decoration: none;
       color: var(--text);
       display: flex;
       flex-direction: column;
       gap: 0.75rem;
-      transition: box-shadow 0.15s, transform 0.12s;
-      border-left: 6px solid var(--card-color, var(--navy));
-      cursor: pointer;
+      flex: 1;
     }
-    .app-card:hover {
-      box-shadow: 0 4px 20px rgba(0,32,63,0.1);
-      transform: translateY(-2px);
-    }
+    .card-body-link:hover { color: var(--text); }
     .card-header {
       display: flex;
       align-items: center;
@@ -261,6 +267,35 @@
       padding: 0.1rem 0.45rem;
       border-radius: 4px;
       font-weight: 600;
+    }
+    .card-daily {
+      border-top: 1px solid var(--border);
+      padding: 0.65rem 1.5rem;
+      background: rgba(0,0,0,0.015);
+      min-height: 2.25rem;
+      display: flex;
+      align-items: center;
+    }
+    .daily-link {
+      font-size: 0.8rem;
+      color: var(--card-color, var(--accent));
+      text-decoration: none;
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+    }
+    .daily-link:hover { text-decoration: underline; }
+    .daily-time {
+      font-size: 0.74rem;
+      color: var(--muted);
+      font-weight: 400;
+      margin-left: 0.25rem;
+    }
+    .daily-unavail {
+      font-size: 0.78rem;
+      color: var(--muted);
+      font-style: italic;
     }
 
     .no-apps {
@@ -415,27 +450,58 @@
 
     renderApps(meData.apps || []);
     showState(null);
+    fetchAndApplyDailyStatus();
   }
 
   function renderApps(apps) {
     const grid = document.getElementById("app-grid");
     const noApps = document.getElementById("no-apps");
     if (!apps.length) { noApps.style.display = ""; return; }
-    grid.innerHTML = apps.map(app => `
-      <a class="app-card"
-         href="${escHtml(app.url)}"
-         style="--card-color: ${escHtml(app.color || '#00203F')}"
-         ${app.external ? 'target="_blank" rel="noopener noreferrer"' : ''}>
-        <div class="card-header">
-          <span class="card-icon">${escHtml(app.icon || '\u{1F4E6}')}</span>
-          <span class="card-title">${escHtml(app.title)}</span>
-        </div>
-        <p class="card-desc">${escHtml(app.description || '')}</p>
-        <div class="card-arrow">
-          Open ${app.external ? '<span class="ext-badge">↗ external</span>' : '→'}
-        </div>
-      </a>
-    `).join("");
+    grid.innerHTML = apps.map(app => {
+      const dailySlug = app.has_daily ? escHtml(app.slug) : null;
+      return `
+      <div class="app-card" style="--card-color: ${escHtml(app.color || '#00203F')}">
+        <a class="card-body-link"
+           href="${escHtml(app.url)}"
+           ${app.external ? 'target="_blank" rel="noopener noreferrer"' : ''}>
+          <div class="card-header">
+            <span class="card-icon">${escHtml(app.icon || '\u{1F4E6}')}</span>
+            <span class="card-title">${escHtml(app.title)}</span>
+          </div>
+          <p class="card-desc">${escHtml(app.description || '')}</p>
+          <div class="card-arrow">
+            Open ${app.external ? '<span class="ext-badge">↗ external</span>' : '→'}
+          </div>
+        </a>
+        ${dailySlug ? `<div class="card-daily" data-slug="${dailySlug}">
+          <span class="daily-unavail">Daily report not yet available</span>
+        </div>` : ''}
+      </div>`;
+    }).join("");
+  }
+
+  async function fetchAndApplyDailyStatus() {
+    try {
+      const r = await fetch('/api/daily-status', {
+        headers: { 'Authorization': `Bearer ${_token}` }
+      });
+      if (!r.ok) return;
+      const status = await r.json();
+      document.querySelectorAll('.card-daily[data-slug]').forEach(el => {
+        const s = status[el.dataset.slug];
+        if (!s || !s.available) return;
+        const raw = s.generated_at;
+        const timeStr = raw
+          ? new Date(raw).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+          : '';
+        const urlSlug = el.dataset.slug.replace(/_/g, '-');
+        el.innerHTML =
+          `<a class="daily-link" href="/apps/${urlSlug}/daily">` +
+          `📄 Open Daily Report` +
+          (timeStr ? ` <span class="daily-time">${timeStr}</span>` : '') +
+          `</a>`;
+      });
+    } catch {}
   }
 
   async function login() {

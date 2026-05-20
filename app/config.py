@@ -21,11 +21,11 @@ APP_REGISTRY = [
     {"slug": "truage_activation", "title": "TruAge Activation",
      "description": "Live HubSpot pull — activation rates across all retailer accounts. Allow 30–60 seconds for the report to run.",
      "icon": "🪪", "color": "#087f5b",
-     "url": "/apps/truage-activation/", "external": False},
+     "url": "/apps/truage-activation/", "external": False, "has_daily": True},
     {"slug": "truage_account", "title": "TruAge Account Manager",
      "description": "Live HubSpot pull — account manager performance and pipeline. Allow 30–60 seconds for the report to run.",
      "icon": "📋", "color": "#b36b00",
-     "url": "https://nacstam.up.railway.app", "external": True},
+     "url": "/apps/truage-account/", "external": False, "has_daily": True},
     {"slug": "truage_dictionary", "title": "TruAge Data Dictionary",
      "description": "HubSpot field definitions, owner roster, and data standards.",
      "icon": "📖", "color": "#0c6e5c",
@@ -89,6 +89,7 @@ class Settings(BaseSettings):
     github_token: str = Field("")
     github_repo: str = Field("paulziv/pez-portal")
     github_branch: str = Field("main")
+    cron_secret: str = Field("")
 
 
 @lru_cache

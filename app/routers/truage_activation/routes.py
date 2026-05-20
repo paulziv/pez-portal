@@ -1,15 +1,96 @@
-"""TruAge Activation Report router — proxies the live report from nacstam.up.railway.app."""
+"""TruAge Activation Report router — proxies the live report from nacstar.up.railway.app."""
 from __future__ import annotations
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import HTMLResponse, JSONResponse
+
 from app.auth import UserClaims, require_app
+from app.daily_cache import activation_cache
 
 router = APIRouter(prefix="/apps/truage-activation", tags=["truage-activation"])
 _require = require_app("truage_activation")
 
 _UPSTREAM = "https://nacstar.up.railway.app"
+
+_DAILY_SHELL = """<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <title>Daily Report — TruAge Activation</title>
+  <style>
+    *{box-sizing:border-box;margin:0;padding:0;}
+    body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
+         background:#F5F0E8;min-height:100vh;}
+    header{background:#00203F;padding:0 1.5rem;height:54px;display:flex;
+           align-items:center;justify-content:space-between;}
+    .hdr-title{font-size:0.95rem;font-weight:700;color:#36ECDE;}
+    .hdr-right{display:flex;align-items:center;gap:1rem;}
+    .hdr-meta{font-size:0.78rem;color:rgba(255,255,255,0.5);}
+    .back{font-size:0.82rem;color:rgba(255,255,255,0.6);text-decoration:none;
+          border:1px solid rgba(255,255,255,0.2);border-radius:6px;padding:0.3rem 0.75rem;}
+    .back:hover{color:#36ECDE;border-color:#36ECDE;}
+    #report-frame{width:100%;border:none;display:block;min-height:calc(100vh - 54px);}
+    #loading{display:flex;align-items:center;justify-content:center;
+             min-height:calc(100vh - 54px);color:#7A7060;font-size:0.9rem;}
+  </style>
+</head>
+<body>
+<header>
+  <span class="hdr-title">&#x1FAA6; Activation Report &mdash; Daily Report</span>
+  <div class="hdr-right">
+    <span class="hdr-meta" id="gen-time"></span>
+    <a class="back" href="/">&#x2190; Portal</a>
+  </div>
+</header>
+<div id="loading">Loading report&hellip;</div>
+<iframe id="report-frame" style="display:none;width:100%;border:none;min-height:calc(100vh - 54px)"></iframe>
+<script>
+  async function load() {
+    try {
+      const client = await auth0.createAuth0Client({
+        domain:"pezdev.us.auth0.com", clientId:"4X6INHXnVCqb4M1KqUTVK9vDBhzT0q5d",
+        authorizationParams:{redirect_uri:window.location.origin,scope:"openid profile email"},
+        cacheLocation:"localstorage",
+      });
+      if (!(await client.isAuthenticated())) { window.location.href = "/"; return; }
+      const claims = await client.getIdTokenClaims();
+      const token = claims ? claims.__raw : null;
+      if (!token) { window.location.href = "/"; return; }
+
+      const r = await fetch('/apps/truage-activation/daily/content', {
+        headers:{'Authorization':'Bearer '+token}
+      });
+      if (r.status === 503) {
+        document.getElementById('loading').textContent = 'Daily report not yet available. Check back after 7 AM.';
+        return;
+      }
+      if (!r.ok) { document.getElementById('loading').textContent = 'Error loading report (' + r.status + ').'; return; }
+      const meta = r.headers.get('X-Generated-At');
+      if (meta) {
+        const t = new Date(meta);
+        document.getElementById('gen-time').textContent =
+          'Generated ' + t.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
+      }
+      const html = await r.text();
+      const frame = document.getElementById('report-frame');
+      frame.src = URL.createObjectURL(new Blob([html], {type:'text/html'}));
+      frame.onload = () => {
+        document.getElementById('loading').style.display = 'none';
+        frame.style.display = 'block';
+      };
+    } catch(e) {
+      document.getElementById('loading').textContent = 'Error: ' + e.message;
+    }
+  }
+  const sdk = document.createElement('script');
+  sdk.src = 'https://cdn.auth0.com/js/auth0-spa-js/2.0/auth0-spa-js.production.js';
+  sdk.onload = load;
+  document.head.appendChild(sdk);
+</script>
+</body>
+</html>"""
 
 # Wrapper shell — injects portal nav around the proxied report
 _SHELL = """<!DOCTYPE html>
@@ -366,6 +447,35 @@ async def refresh_report(user: UserClaims = Depends(_require)) -> JSONResponse:
         return JSONResponse({"status": "error", "detail": str(exc)}, status_code=502)
 
 
+@router.get("/daily", response_class=HTMLResponse, include_in_schema=False)
+async def daily_ui() -> str:
+    return _DAILY_SHELL
+
+
+@router.get("/daily/content", include_in_schema=False)
+async def daily_content(user: UserClaims = Depends(_require)) -> HTMLResponse:
+    if not activation_cache.available:
+        raise HTTPException(status_code=503, detail="Daily report not yet available")
+    return HTMLResponse(
+        content=activation_cache.html,
+        headers={"X-Generated-At": activation_cache.generated_at.isoformat() + "Z"},
+    )
+
+
 @router.get("/api/status")
 async def status(user: UserClaims = Depends(_require)) -> dict:
-    return {"app": "truage_activation", "upstream": _UPSTREAM, "user": user.email}
+    return {"app": "truage_activation", "upstream": _UPSTREAM, "user": user.email,
+            "daily": activation_cache.to_status()}
+
+
+async def run_daily() -> str:
+    """Fetch upstream report and populate the daily cache. Called by the cron endpoint."""
+    try:
+        async with httpx.AsyncClient(timeout=90) as client:
+            resp = await client.get(f"{_UPSTREAM}/")
+        if resp.status_code == 200:
+            activation_cache.set(resp.text)
+            return "ok"
+        return f"upstream_status_{resp.status_code}"
+    except Exception as exc:
+        return f"error: {exc}"
