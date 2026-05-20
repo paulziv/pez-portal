@@ -27,8 +27,9 @@ from app.config import get_settings
 router = APIRouter(prefix="/apps/admin", tags=["admin"])
 _require = require_app("admin")
 
-_GITHUB_API = "https://api.github.com"
+_GITHUB_API  = "https://api.github.com"
 _CONFIG_PATH = "app/config.py"
+_RAILWAY_GQL = "https://backboard.railway.com/graphql/v2"
 
 
 # ── Schemas ───────────────────────────────────────────────────────────────────
@@ -36,6 +37,13 @@ _CONFIG_PATH = "app/config.py"
 class DeployPayload(BaseModel):
     users: dict[str, list[str]]
     email_subscriptions: dict[str, list[str]] = {}
+
+
+class SchedulePayload(BaseModel):
+    frequency: str   # "hourly" | "daily" | "weekly"
+    hour: int = 13   # 0-23 UTC
+    minute: int = 0  # 0-59
+    day: int = 1     # 0=Sun … 6=Sat (weekly only)
 
 
 # ── Config patching helpers ───────────────────────────────────────────────────
@@ -208,6 +216,79 @@ async def deploy(
     }
 
 
+@router.get("/api/schedule")
+async def get_schedule(_user: UserClaims = Depends(_require)) -> dict:
+    """Return current cron schedule from Railway."""
+    settings = get_settings()
+    if not settings.railway_api_token:
+        return {"cron_schedule": None, "error": "RAILWAY_API_TOKEN not configured"}
+    query = """query($svcId: String!, $envId: String!) {
+      serviceInstance(serviceId: $svcId, environmentId: $envId) { cronSchedule }
+    }"""
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            r = await client.post(
+                _RAILWAY_GQL,
+                headers={"Authorization": f"Bearer {settings.railway_api_token}"},
+                json={"query": query, "variables": {
+                    "svcId": settings.railway_cron_service_id,
+                    "envId": settings.railway_environment_id,
+                }},
+            )
+        data = r.json()
+        schedule = (data.get("data") or {}).get("serviceInstance", {}).get("cronSchedule")
+        return {"cron_schedule": schedule}
+    except Exception as exc:
+        return {"cron_schedule": None, "error": str(exc)}
+
+
+@router.post("/api/schedule")
+async def set_schedule(
+    payload: SchedulePayload,
+    _user: UserClaims = Depends(_require),
+) -> dict:
+    """Update the Railway cron service schedule."""
+    settings = get_settings()
+    if not settings.railway_api_token:
+        raise HTTPException(status_code=503, detail="RAILWAY_API_TOKEN not configured on Railway")
+
+    if payload.frequency == "hourly":
+        expr = f"{payload.minute} * * * *"
+    elif payload.frequency == "daily":
+        expr = f"{payload.minute} {payload.hour} * * *"
+    elif payload.frequency == "weekly":
+        expr = f"{payload.minute} {payload.hour} * * {payload.day}"
+    else:
+        raise HTTPException(status_code=422, detail="frequency must be hourly, daily, or weekly")
+
+    mutation = """mutation($svcId: String!, $envId: String!, $cron: String!) {
+      serviceInstanceUpdate(
+        serviceId: $svcId,
+        environmentId: $envId,
+        input: { cronSchedule: $cron }
+      )
+    }"""
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            r = await client.post(
+                _RAILWAY_GQL,
+                headers={"Authorization": f"Bearer {settings.railway_api_token}"},
+                json={"query": mutation, "variables": {
+                    "svcId": settings.railway_cron_service_id,
+                    "envId": settings.railway_environment_id,
+                    "cron": expr,
+                }},
+            )
+        data = r.json()
+        if "errors" in data:
+            raise HTTPException(status_code=502, detail=str(data["errors"]))
+        return {"cron_schedule": expr, "message": f"Schedule updated to: {expr}"}
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
 # ── Admin UI HTML ─────────────────────────────────────────────────────────────
 
 _ADMIN_HTML = """<!DOCTYPE html>
@@ -281,6 +362,21 @@ _ADMIN_HTML = """<!DOCTYPE html>
     .dist-row:last-child{border-bottom:none;}
     .dist-email{flex:1;color:var(--text);}
     .dist-no-access{color:var(--muted);font-style:italic;font-size:0.78rem;}
+    .sched-row{display:flex;align-items:center;gap:1rem;flex-wrap:wrap;margin-bottom:0.85rem;}
+    .sched-label{font-size:0.82rem;color:var(--muted);width:80px;flex-shrink:0;}
+    .freq-opts{display:flex;gap:0.5rem;}
+    .freq-btn{background:var(--panel2);border:1px solid var(--border);border-radius:6px;
+              padding:0.35rem 0.8rem;font-size:0.82rem;color:var(--muted);cursor:pointer;}
+    .freq-btn.active{background:var(--accent);color:#0f172a;border-color:var(--accent);font-weight:600;}
+    .time-inputs{display:flex;align-items:center;gap:0.4rem;}
+    .time-input{background:var(--panel2);color:var(--text);border:1px solid var(--border);
+                border-radius:6px;padding:0.35rem 0.5rem;font-size:0.9rem;
+                width:52px;text-align:center;}
+    .time-sep{font-size:1rem;color:var(--muted);font-weight:700;}
+    .time-tz{font-size:0.75rem;color:var(--muted);margin-left:0.25rem;}
+    .sched-current{font-size:0.78rem;color:var(--muted);margin-top:0.25rem;font-style:italic;}
+    select.day-select{background:var(--panel2);color:var(--text);border:1px solid var(--border);
+                      border-radius:6px;padding:0.35rem 0.5rem;font-size:0.82rem;cursor:pointer;}
     .spinner{display:inline-block;width:14px;height:14px;
              border:2px solid var(--border);border-top-color:var(--accent);
              border-radius:50%;animation:spin 0.8s linear infinite;vertical-align:middle;}
@@ -330,6 +426,48 @@ _ADMIN_HTML = """<!DOCTYPE html>
     </p>
   </div>
 
+  <!-- Report Schedule -->
+  <div class="section">
+    <h2>📅 Report Schedule</h2>
+    <p style="font-size:0.78rem;color:var(--muted);margin-bottom:1rem;">
+      Controls when the daily cron runs and caches both reports. Times are UTC.
+    </p>
+    <div class="sched-row">
+      <span class="sched-label">Frequency</span>
+      <div class="freq-opts">
+        <button class="freq-btn" data-freq="hourly" onclick="setFreq('hourly')">Hourly</button>
+        <button class="freq-btn active" data-freq="daily" onclick="setFreq('daily')">Daily</button>
+        <button class="freq-btn" data-freq="weekly" onclick="setFreq('weekly')">Weekly</button>
+      </div>
+    </div>
+    <div class="sched-row" id="sched-time-row">
+      <span class="sched-label">Time</span>
+      <div class="time-inputs">
+        <input type="number" class="time-input" id="sched-hour" min="0" max="23" value="13"/>
+        <span class="time-sep">:</span>
+        <input type="number" class="time-input" id="sched-minute" min="0" max="59" value="00"/>
+        <span class="time-tz">UTC (7 AM ET = 13:00)</span>
+      </div>
+    </div>
+    <div class="sched-row" id="sched-day-row" style="display:none">
+      <span class="sched-label">Day</span>
+      <select class="day-select" id="sched-day">
+        <option value="0">Sunday</option>
+        <option value="1" selected>Monday</option>
+        <option value="2">Tuesday</option>
+        <option value="3">Wednesday</option>
+        <option value="4">Thursday</option>
+        <option value="5">Friday</option>
+        <option value="6">Saturday</option>
+      </select>
+    </div>
+    <div class="sched-current" id="sched-current">Loading current schedule…</div>
+    <div style="margin-top:0.85rem;">
+      <button class="btn" id="btn-sched-apply" onclick="applySchedule()">Apply Schedule</button>
+      <span id="sched-spinner" style="display:none;margin-left:0.5rem"><span class="spinner"></span></span>
+    </div>
+  </div>
+
   <!-- Report Distribution -->
   <div class="section">
     <h2>📬 Report Distribution</h2>
@@ -370,6 +508,7 @@ _ADMIN_HTML = """<!DOCTYPE html>
     renderApps();
     renderTable();
     renderDistribution();
+    loadSchedule(token);
   }
 
   // ── Token (from Auth0 SDK stored in localStorage) ─────────────────────────
@@ -464,6 +603,83 @@ _ADMIN_HTML = """<!DOCTYPE html>
     if (checked && !list.includes(slug)) list.push(slug);
     if (!checked) { const i = list.indexOf(slug); if (i > -1) list.splice(i, 1); }
     markDirty();
+  }
+
+  // ── Schedule ──────────────────────────────────────────────────────────────
+  let _schedFreq = 'daily';
+
+  function setFreq(f) {
+    _schedFreq = f;
+    document.querySelectorAll('.freq-btn').forEach(b => b.classList.toggle('active', b.dataset.freq === f));
+    document.getElementById('sched-time-row').style.display = f === 'hourly' ? 'none' : '';
+    document.getElementById('sched-day-row').style.display  = f === 'weekly'  ? '' : 'none';
+  }
+
+  function _parseCron(expr) {
+    if (!expr) return null;
+    const parts = expr.trim().split(/[ \t]+/);
+    if (parts.length < 5) return null;
+    const [min, hr, , , dow] = parts;
+    if (hr === '*') return { freq: 'hourly', hour: 0, minute: parseInt(min) || 0, day: 1 };
+    if (dow === '*') return { freq: 'daily',  hour: parseInt(hr), minute: parseInt(min), day: 1 };
+    return { freq: 'weekly', hour: parseInt(hr), minute: parseInt(min), day: parseInt(dow) };
+  }
+
+  function _cronLabel(expr) {
+    const p = _parseCron(expr);
+    if (!p) return expr || 'Not set';
+    const pad = n => String(n).padStart(2,'0');
+    const days = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+    if (p.freq === 'hourly')  return `Every hour at :${pad(p.minute)} UTC`;
+    if (p.freq === 'daily')   return `Daily at ${pad(p.hour)}:${pad(p.minute)} UTC`;
+    if (p.freq === 'weekly')  return `Weekly on ${days[p.day]} at ${pad(p.hour)}:${pad(p.minute)} UTC`;
+    return expr;
+  }
+
+  async function loadSchedule(token) {
+    const r = await apiFetch('/apps/admin/api/schedule', token);
+    if (!r.ok) return;
+    const data = await r.json();
+    const expr = data.cron_schedule;
+    document.getElementById('sched-current').textContent =
+      data.error ? `⚠ ${data.error}` : `Current: ${_cronLabel(expr)}`;
+    const p = _parseCron(expr);
+    if (p) {
+      setFreq(p.freq);
+      document.getElementById('sched-hour').value   = p.hour;
+      document.getElementById('sched-minute').value = String(p.minute).padStart(2,'0');
+      document.getElementById('sched-day').value    = p.day;
+    }
+  }
+
+  async function applySchedule() {
+    const token = await getToken();
+    if (!token) return;
+    const btn = document.getElementById('btn-sched-apply');
+    const spinner = document.getElementById('sched-spinner');
+    btn.disabled = true; spinner.style.display = '';
+    const payload = {
+      frequency: _schedFreq,
+      hour:   parseInt(document.getElementById('sched-hour').value)   || 0,
+      minute: parseInt(document.getElementById('sched-minute').value) || 0,
+      day:    parseInt(document.getElementById('sched-day').value)    || 1,
+    };
+    try {
+      const r = await apiFetch('/apps/admin/api/schedule', token, {
+        method: 'POST', body: JSON.stringify(payload),
+      });
+      const data = await r.json();
+      if (r.ok) {
+        document.getElementById('sched-current').textContent = `Current: ${_cronLabel(data.cron_schedule)}`;
+        showStatus(`✓ Schedule updated — ${_cronLabel(data.cron_schedule)}`, true);
+      } else {
+        showStatus('Schedule error: ' + (data.detail || r.status), false);
+      }
+    } catch(e) {
+      showStatus('Network error: ' + e.message, false);
+    } finally {
+      btn.disabled = false; spinner.style.display = 'none';
+    }
   }
 
   // ── User edits ─────────────────────────────────────────────────────────────
