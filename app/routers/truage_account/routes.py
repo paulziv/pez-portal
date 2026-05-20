@@ -18,10 +18,14 @@ _UPSTREAM = "https://nacstam.up.railway.app"
 
 
 def _inject_base(html: str) -> str:
-    """Inject <base href> so relative URLs in blob-loaded iframes resolve to the upstream."""
+    """Inject <base href> and strip upstream nav bar from proxied report HTML."""
     tag = f'<base href="{_UPSTREAM}/">'
     patched = re.sub(r'(<head\b[^>]*>)', r'\1' + tag, html, count=1, flags=re.IGNORECASE)
-    return patched if patched != html else tag + html
+    if patched == html:
+        patched = tag + html
+    # Remove the upstream app's own nav bar (links to /audit, /dictionary, /settings, etc.)
+    patched = re.sub(r'<nav\b[^>]*>.*?</nav>', '', patched, flags=re.IGNORECASE | re.DOTALL)
+    return patched
 
 # ── Live-report shell ─────────────────────────────────────────────────────────
 
