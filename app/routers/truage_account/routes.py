@@ -47,6 +47,10 @@ _SHELL = """<!DOCTYPE html>
                   color:rgba(255,255,255,0.5);border:1px solid rgba(255,255,255,0.15);
                   border-radius:6px;padding:0.3rem 0.75rem;}}
     .refresh-btn:hover{{color:#36ECDE;border-color:#36ECDE;}}
+    .hdr-btn{{font-size:0.82rem;background:none;cursor:pointer;color:rgba(255,255,255,0.5);
+             border:1px solid rgba(255,255,255,0.15);border-radius:6px;padding:0.3rem 0.75rem;}}
+    .hdr-btn:hover:not(:disabled){{color:#36ECDE;border-color:#36ECDE;}}
+    .hdr-btn:disabled{{opacity:0.3;cursor:not-allowed;}}
     #report-frame{{width:100%;border:none;display:block;min-height:calc(100vh - 54px);}}
     #loading{{display:flex;flex-direction:column;align-items:center;justify-content:center;
               min-height:calc(100vh - 54px);padding:2rem 1.5rem;}}
@@ -85,6 +89,8 @@ _SHELL = """<!DOCTYPE html>
   <span class="hdr-title">&#x1F4CB; TruAge Account Manager</span>
   <div class="hdr-right">
     <button class="refresh-btn" onclick="triggerRefresh()" title="Fetch latest data from HubSpot">&#x21BB; Refresh</button>
+    <button class="hdr-btn" id="btn-email" disabled title="Coming soon — email forwarding">&#x2709; Forward</button>
+    <button class="hdr-btn" id="btn-download" disabled onclick="downloadReport()">&#x2193; Download</button>
     <a class="back" href="/">&#x2190; Portal</a>
   </div>
 </header>
@@ -120,6 +126,7 @@ _SHELL = """<!DOCTYPE html>
     ["Almost there…",                       "Assembling your report now"],
     ["Finalizing the report…",              "Just a few more seconds"],
   ];
+  let _reportHtml = null;
   let _msgTimer = null;
   function startLoadingMessages(startIdx) {{
     let i = startIdx || 0;
@@ -217,6 +224,8 @@ _SHELL = """<!DOCTYPE html>
         return;
       }}
       const html = await resp.text();
+      _reportHtml = html;
+      document.getElementById('btn-download').disabled = false;
       const blob = new Blob([html], {{type:'text/html'}});
       const frame = document.getElementById('report-frame');
       frame.src = URL.createObjectURL(blob);
@@ -236,7 +245,18 @@ _SHELL = """<!DOCTYPE html>
     }}
   }}
 
+  function downloadReport() {{
+    if (!_reportHtml) return;
+    const date = new Date().toISOString().split('T')[0];
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([_reportHtml], {{type:'text/html'}}));
+    a.download = 'truage-account-manager-' + date + '.html';
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  }}
+
   async function triggerRefresh() {{
+    _reportHtml = null;
+    document.getElementById('btn-download').disabled = true;
     const token = await getToken();
     if (!token) return;
     const btn = document.querySelector('.refresh-btn');
@@ -290,6 +310,10 @@ _DAILY_SHELL = """<!DOCTYPE html>
     .back{{font-size:0.82rem;color:rgba(255,255,255,0.6);text-decoration:none;
            border:1px solid rgba(255,255,255,0.2);border-radius:6px;padding:0.3rem 0.75rem;}}
     .back:hover{{color:#36ECDE;border-color:#36ECDE;}}
+    .hdr-btn{{font-size:0.82rem;background:none;cursor:pointer;color:rgba(255,255,255,0.5);
+             border:1px solid rgba(255,255,255,0.15);border-radius:6px;padding:0.3rem 0.75rem;}}
+    .hdr-btn:hover:not(:disabled){{color:#36ECDE;border-color:#36ECDE;}}
+    .hdr-btn:disabled{{opacity:0.3;cursor:not-allowed;}}
     #report-frame{{width:100%;border:none;display:block;min-height:calc(100vh - 54px);}}
     #loading{{display:flex;align-items:center;justify-content:center;
               min-height:calc(100vh - 54px);color:#7A7060;font-size:0.9rem;}}
@@ -300,6 +324,8 @@ _DAILY_SHELL = """<!DOCTYPE html>
   <span class="hdr-title">&#x1F4CB; Account Manager &mdash; Daily Report</span>
   <div class="hdr-right">
     <span class="hdr-meta" id="gen-time"></span>
+    <button class="hdr-btn" id="btn-email" disabled title="Coming soon — email forwarding">&#x2709; Forward</button>
+    <button class="hdr-btn" id="btn-download" disabled onclick="downloadReport()">&#x2193; Download</button>
     <a class="back" href="/">&#x2190; Portal</a>
   </div>
 </header>
@@ -333,6 +359,8 @@ _DAILY_SHELL = """<!DOCTYPE html>
           'Generated ' + t.toLocaleTimeString([], {{hour:'2-digit',minute:'2-digit'}});
       }}
       const html = await r.text();
+      _reportHtml = html;
+      document.getElementById('btn-download').disabled = false;
       const frame = document.getElementById('report-frame');
       frame.src = URL.createObjectURL(new Blob([html], {{type:'text/html'}}));
       frame.onload = () => {{
@@ -343,6 +371,15 @@ _DAILY_SHELL = """<!DOCTYPE html>
       document.getElementById('loading').textContent = 'Error: ' + e.message;
     }}
   }}
+  function downloadReport() {{
+    if (!_reportHtml) return;
+    const date = new Date().toISOString().split('T')[0];
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([_reportHtml], {{type:'text/html'}}));
+    a.download = 'truage-account-manager-daily-' + date + '.html';
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  }}
+  let _reportHtml = null;
   const sdk = document.createElement('script');
   sdk.src = 'https://cdn.auth0.com/js/auth0-spa-js/2.0/auth0-spa-js.production.js';
   sdk.onload = load;
