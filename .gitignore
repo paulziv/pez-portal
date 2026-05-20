@@ -40,3 +40,9 @@ Thumbs.db
 # Temp
 tmp/
 temp/
+
+# Local scripts
+push.bat
+
+# Pytest custom cache dirs
+pytest-cache-files-*/

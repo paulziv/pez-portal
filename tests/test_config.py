@@ -43,6 +43,6 @@ def test_frank_has_benchmark():
 def test_settings_defaults():
     settings = get_settings()
     assert settings.auth0_domain == "pezdev.us.auth0.com"
-    assert settings.app_version == "1.0.0"
+    assert settings.app_version == "1.1.0"
     assert settings.log_level == "INFO"
     assert settings.github_repo == "paulziv/pez-portal"

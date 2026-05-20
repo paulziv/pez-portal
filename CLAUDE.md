@@ -42,13 +42,15 @@ app/
     logo.gif           # NACS Innovation animated logo (loop=3, ~37 frames)
     nacs-innovation-logo.gif  # New cream-bg lightbulb-with-rings logo (loop=3)
   routers/
-    admin/routes.py    # Admin panel — edit USER_ROLES via GitHub API
-    stock/routes.py    # Market Dashboard — Deribit public API proxy
-    truage_activation/routes.py  # TruAge Activation (stub, coming soon)
-    truage_account/routes.py     # TruAge Account Manager (stub, coming soon)
+    admin/routes.py          # Admin panel — edit USER_ROLES via GitHub API
+    stock/routes.py          # Market Dashboard — Deribit public API proxy
+    truage_activation/routes.py   # TruAge Activation report
+    truage_account/routes.py      # TruAge Account Manager
+    truage_dictionary/routes.py   # TruAge Data Dictionary
 tests/
   test_config.py       # APP_REGISTRY structure, USER_ROLES integrity
   test_routes.py       # HTTP-level route tests via TestClient
+  test_admin_patch.py  # Unit tests for admin panel config patching
 ```
 
 ## Brand Palette
@@ -70,6 +72,7 @@ Per-app accent colors (card left border):
 - BenchPoint:        `#005eb8` blue
 - TruAge Activation: `#087f5b` teal-green
 - TruAge Account:    `#b36b00` amber
+- TruAge Dictionary: `#0c6e5c` dark teal
 - Market Dashboard:  `#6741d9` purple (card) / `#36ECDE` mint (dashboard UI)
 
 ## User / Role Management
@@ -79,8 +82,12 @@ The admin panel (`/apps/admin/`) lets admins edit this via the GitHub API —
 it commits a new `config.py` directly to the repo, triggering a Railway redeploy.
 
 Currently authorised users:
-- `ziv.paul@gmail.com` — all apps (admin, benchmark, truage_activation, truage_account, stock)
-- `fgleeson@convenience.org` — benchmark only
+- `ziv.paul@gmail.com` — all apps (admin, benchmark, truage_activation, truage_account, truage_dictionary, stock)
+- `fgleeson@convenience.org` — benchmark, stock, truage_account, truage_activation, truage_dictionary (intentional showcase)
+- `lorijoziv@gmail.com` — benchmark, stock
+- `lrountree@mytruage.org` — truage_activation, truage_account, truage_dictionary
+- `pabernathy@mytruage.org` — truage_activation, truage_account, truage_dictionary
+- `ssikorski@convenience.org` — truage_activation, truage_account, truage_dictionary
 
 ## Adding a new user
 
@@ -102,14 +109,16 @@ Then push to GitHub main.
 4. Register router in `app/main.py`
 5. Add a test to `tests/test_routes.py`
 
-## BenchPoint integration (open item)
+## BenchPoint integration (open items)
 
-BenchPoint (`https://990benchmark.up.railway.app/ui/`) is a separate Railway
-service with its own Auth0 setup. Two open items:
-- **SSO**: configure both apps to use the same Auth0 tenant/client so the portal
-  session carries over (no second login prompt).
-- **Brand colours**: BenchPoint UI has some non-brand greens/blues. Needs CSS
-  update in the `nacs-990-benchmark` repo.
+BenchPoint (`https://nacs-990-benchmark-production.up.railway.app/ui/`) is a service
+inside the `nacs-portal` Railway project (service: `nacs-990-benchmark`).
+
+- **SSO**: BenchPoint uses a different Auth0 client ID — users must log in twice.
+  Fix: update BenchPoint to use client ID `4X6INHXnVCqb4M1KqUTVK9vDBhzT0q5d`
+  (same as pez-portal) on tenant `pezdev.us.auth0.com`.
+- **Brand colours**: BenchPoint UI has some off-brand colours (Bootstrap defaults).
+  Needs CSS update in the `paulziv/nacs-990-benchmark` repo.
 
 ## Common commands
 
@@ -132,8 +141,11 @@ git push origin main   # Railway auto-deploys
 
 - **File truncation**: Large Python files with embedded HTML strings can truncate
   during context-window edits. Use `python3 -c "import ast; ast.parse(open(f).read())"` 
-  to validate all files before pushing.
+  to validate all files before pushing. The admin panel now validates with `ast.parse`
+  before committing to GitHub, but direct edits have no such guard.
 - **Config caching**: `get_settings()` is `@lru_cache`. If you change `.env` at
   runtime, restart the server.
 - **Admin panel GitHub deploy**: requires `GITHUB_TOKEN` env var with `repo` scope
   and `GITHUB_REPO=paulziv/pez-portal` set on Railway.
+- **Railway auth**: use `RAILWAY_API_TOKEN` (not `RAILWAY_TOKEN`) for non-interactive
+  CLI and GraphQL API access. Token from https://railway.com/account/tokens.
