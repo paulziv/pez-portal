@@ -54,6 +54,11 @@ USER_ROLES: dict[str, list[str]] = {
         "truage_account",
         "truage_dictionary",
     ],
+    "mterry@mytuage.org": [
+        "truage_activation",
+        "truage_account",
+        "truage_dictionary",
+    ],
     "pabernathy@mytruage.org": [
         "truage_activation",
         "truage_account",
