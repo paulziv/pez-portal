@@ -1,6 +1,9 @@
 """TruAge Activation Report router — proxies the live report from nacstar.up.railway.app."""
 from __future__ import annotations
 
+import asyncio
+import re
+
 import httpx
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import HTMLResponse, JSONResponse
@@ -12,6 +15,14 @@ router = APIRouter(prefix="/apps/truage-activation", tags=["truage-activation"])
 _require = require_app("truage_activation")
 
 _UPSTREAM = "https://nacstar.up.railway.app"
+
+
+def _inject_base(html: str) -> str:
+    """Inject <base href> so relative URLs in blob-loaded iframes resolve to the upstream."""
+    tag = f'<base href="{_UPSTREAM}/">'
+    patched = re.sub(r'(<head\b[^>]*>)', r'\1' + tag, html, count=1, flags=re.IGNORECASE)
+    return patched if patched != html else tag + html
+
 
 _DAILY_SHELL = """<!DOCTYPE html>
 <html lang="en">
@@ -429,7 +440,7 @@ async def proxy_report(user: UserClaims = Depends(_require)) -> HTMLResponse:
             )
         if resp.status_code != 200:
             raise HTTPException(status_code=502, detail="Upstream returned non-200")
-        return HTMLResponse(content=resp.text, status_code=200)
+        return HTMLResponse(content=_inject_base(resp.text), status_code=200)
     except httpx.TimeoutException:
         raise HTTPException(status_code=504, detail="Upstream timed out")
     except httpx.RequestError as exc:
@@ -469,12 +480,18 @@ async def status(user: UserClaims = Depends(_require)) -> dict:
 
 
 async def run_daily() -> str:
-    """Fetch upstream report and populate the daily cache. Called by the cron endpoint."""
+    """Trigger upstream refresh, wait for it to complete, then cache the result."""
+    try:
+        async with httpx.AsyncClient(timeout=15) as client:
+            await client.post(f"{_UPSTREAM}/refresh")
+    except Exception:
+        pass  # best-effort — proceed to fetch even if refresh trigger fails
+    await asyncio.sleep(75)  # wait for HubSpot pull to complete
     try:
         async with httpx.AsyncClient(timeout=90) as client:
             resp = await client.get(f"{_UPSTREAM}/")
         if resp.status_code == 200:
-            activation_cache.set(resp.text)
+            activation_cache.set(_inject_base(resp.text))
             return "ok"
         return f"upstream_status_{resp.status_code}"
     except Exception as exc:

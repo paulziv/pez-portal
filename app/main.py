@@ -95,15 +95,11 @@ def create_app() -> FastAPI:
         auth = request.headers.get("Authorization", "")
         if auth != f"Bearer {settings.cron_secret}":
             return JSONResponse({"error": "Unauthorized"}, status_code=401)
-        results = await asyncio.gather(
-            run_account_daily(),
-            run_activation_daily(),
-            return_exceptions=True,
-        )
-        return JSONResponse({
-            "truage_account":    str(results[0]),
-            "truage_activation": str(results[1]),
-        })
+        # Fire background tasks — each triggers upstream refresh then waits ~75s
+        # before caching. Return immediately so the cron caller doesn't time out.
+        asyncio.create_task(run_account_daily())
+        asyncio.create_task(run_activation_daily())
+        return JSONResponse({"status": "triggered"})
 
     @app.get("/", include_in_schema=False)
     async def portal() -> Response:
