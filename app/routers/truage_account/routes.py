@@ -95,10 +95,9 @@ _SHELL = """<!DOCTYPE html>
     <div class="loader-sub">Hang tight &mdash; this usually takes 30&ndash;45 seconds</div>
     <div class="steps">
       <div class="step pending" id="step-1"><span class="step-icon">&#x25CB;</span><span>Authenticating with HubSpot API</span></div>
-      <div class="step pending" id="step-2"><span class="step-icon">&#x25CB;</span><span>Fetching account manager pipeline</span></div>
-      <div class="step pending" id="step-3"><span class="step-icon">&#x25CB;</span><span>Pulling activity by territory</span></div>
-      <div class="step pending" id="step-4"><span class="step-icon">&#x25CB;</span><span>Calculating performance metrics</span></div>
-      <div class="step pending" id="step-5"><span class="step-icon">&#x25CB;</span><span>Assembling your report</span></div>
+      <div class="step pending" id="step-2"><span class="step-icon">&#x25CB;</span><span>Analysing AM assignments &amp; overlaps</span></div>
+      <div class="step pending" id="step-3"><span class="step-icon">&#x25CB;</span><span>Scoring hygiene and flagging conflicts</span></div>
+      <div class="step pending" id="step-4"><span class="step-icon">&#x25CB;</span><span>Assembling your report</span></div>
     </div>
     <div class="loader-warn" id="loader-warn">
       Still working&hellip; The HubSpot connection is taking longer than usual. Sit tight &mdash; it will arrive.
@@ -114,12 +113,11 @@ _SHELL = """<!DOCTYPE html>
 <iframe id="report-frame" style="display:none;width:100%;border:none;min-height:calc(100vh - 54px)"></iframe>
 <script>
   const LOAD_MSGS = [
-    ["Connecting to HubSpot…",          "Pulling your latest account data"],
-    ["Crunching the numbers…",           "Counting deals, checking pipeline"],
-    ["Scanning account records…",        "Matching accounts to territories"],
-    ["Checking performance metrics…",    "Hang tight — almost done"],
-    ["Almost there…",                    "Building your report now"],
-    ["Finalizing the report…",           "Just a few more seconds"],
+    ["Connecting to HubSpot…",              "Pulling your latest account data"],
+    ["Analysing AM assignments…",           "Checking overlaps and territory coverage"],
+    ["Scoring hygiene…",                    "Flagging conflicts and gaps"],
+    ["Almost there…",                       "Assembling your report now"],
+    ["Finalizing the report…",              "Just a few more seconds"],
   ];
   let _msgTimer = null;
   function startLoadingMessages(startIdx) {{
@@ -148,10 +146,10 @@ _SHELL = """<!DOCTYPE html>
     return Math.max(0, Math.ceil((_COOLDOWN_MS - (Date.now() - ts)) / 1000));
   }}
 
-  const _STEP_MS = [600, 9000, 19000, 30000, 41000];
+  const _STEP_MS = [600, 12000, 24000, 36000];
   let _stepTimers = [], _warnTimer = null;
   function _resetSteps() {{
-    for (let i = 1; i <= 5; i++) {{
+    for (let i = 1; i <= 4; i++) {{
       const el = document.getElementById('step-' + i);
       if (el) {{ el.className = 'step pending'; el.querySelector('.step-icon').innerHTML = '&#x25CB;'; }}
     }}
