@@ -95,9 +95,10 @@ _SHELL = """<!DOCTYPE html>
     <div class="loader-sub">Hang tight &mdash; this usually takes 30&ndash;45 seconds</div>
     <div class="steps">
       <div class="step pending" id="step-1"><span class="step-icon">&#x25CB;</span><span>Authenticating with HubSpot API</span></div>
-      <div class="step pending" id="step-2"><span class="step-icon">&#x25CB;</span><span>Analysing AM assignments &amp; overlaps</span></div>
-      <div class="step pending" id="step-3"><span class="step-icon">&#x25CB;</span><span>Scoring hygiene and flagging conflicts</span></div>
-      <div class="step pending" id="step-4"><span class="step-icon">&#x25CB;</span><span>Assembling your report</span></div>
+      <div class="step pending" id="step-2"><span class="step-icon">&#x25CB;</span><span>Fetching account manager records</span></div>
+      <div class="step pending" id="step-3"><span class="step-icon">&#x25CB;</span><span>Analysing AM assignments &amp; overlaps</span></div>
+      <div class="step pending" id="step-4"><span class="step-icon">&#x25CB;</span><span>Scoring hygiene and flagging conflicts</span></div>
+      <div class="step pending" id="step-5"><span class="step-icon">&#x25CB;</span><span>Assembling your report</span></div>
     </div>
     <div class="loader-warn" id="loader-warn">
       Still working&hellip; The HubSpot connection is taking longer than usual. Sit tight &mdash; it will arrive.
@@ -146,10 +147,10 @@ _SHELL = """<!DOCTYPE html>
     return Math.max(0, Math.ceil((_COOLDOWN_MS - (Date.now() - ts)) / 1000));
   }}
 
-  const _STEP_MS = [600, 12000, 24000, 36000];
+  const _STEP_MS = [600, 9000, 19000, 30000, 41000];
   let _stepTimers = [], _warnTimer = null;
   function _resetSteps() {{
-    for (let i = 1; i <= 4; i++) {{
+    for (let i = 1; i <= 5; i++) {{
       const el = document.getElementById('step-' + i);
       if (el) {{ el.className = 'step pending'; el.querySelector('.step-icon').innerHTML = '&#x25CB;'; }}
     }}
@@ -376,8 +377,8 @@ async def daily_content(user: UserClaims = Depends(_require)) -> HTMLResponse:
 @router.get("/proxy", response_class=HTMLResponse, include_in_schema=False)
 async def proxy_report(user: UserClaims = Depends(_require)) -> HTMLResponse:
     try:
-        async with httpx.AsyncClient(timeout=90, follow_redirects=True) as client:
-            resp = await client.get(f"{_UPSTREAM}/")
+        async with httpx.AsyncClient(timeout=120, follow_redirects=True) as client:
+            resp = await client.get(f"{_UPSTREAM}/audit/report")
         if resp.status_code not in (200, 202):
             raise HTTPException(status_code=502, detail="Upstream returned non-200")
         return HTMLResponse(content=_inject_base(resp.text), status_code=200)
@@ -404,23 +405,23 @@ async def status(user: UserClaims = Depends(_require)) -> dict:
 
 
 async def run_daily() -> str:
-    """Trigger upstream refresh then poll until a full report is ready, then cache it."""
+    """Fetch /audit/report directly (blocking endpoint), cache when a full report arrives."""
     import asyncio
     try:
         async with httpx.AsyncClient(timeout=15, follow_redirects=True) as client:
             await client.post(f"{_UPSTREAM}/refresh")
     except Exception:
         pass
-    # Poll every 20s for up to ~5 minutes. Real reports are >10 KB;
-    # "creating report" placeholders are a few hundred bytes.
-    for attempt in range(15):
-        await asyncio.sleep(20)
+    # /audit/report is a blocking endpoint — retry up to 3× with a 2-min timeout each.
+    for attempt in range(3):
         try:
-            async with httpx.AsyncClient(timeout=30, follow_redirects=True) as client:
-                resp = await client.get(f"{_UPSTREAM}/")
+            async with httpx.AsyncClient(timeout=120, follow_redirects=True) as client:
+                resp = await client.get(f"{_UPSTREAM}/audit/report")
             if resp.status_code == 200 and len(resp.text) > 10_000:
                 account_cache.set(_inject_base(resp.text))
                 return f"ok (attempt {attempt + 1})"
         except Exception:
             pass
-    return "error: upstream report not ready after retries"
+        if attempt < 2:
+            await asyncio.sleep(10)
+    return "error: upstream report not ready after 3 attempts"
