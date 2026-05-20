@@ -10,6 +10,7 @@ USER_ROLES can access any route here.
 
 from __future__ import annotations
 
+import ast
 import base64
 import re
 from typing import Any
@@ -56,7 +57,7 @@ def _patch_config_py(source: str, new_users: dict[str, list[str]]) -> str:
     new_block = _build_user_roles_block(new_users)
     patched, n = re.subn(
         r'USER_ROLES: dict\[str, list\[str\]\] = \{.*?\}',
-        new_block,
+        lambda _: new_block,
         source,
         flags=re.DOTALL,
     )
@@ -106,6 +107,15 @@ async def _github_commit(new_users: dict[str, list[str]]) -> str:
             new_source = _patch_config_py(current_source, new_users)
         except ValueError as exc:
             raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+        # ── Validate before committing ────────────────────────────────────
+        try:
+            ast.parse(new_source)
+        except SyntaxError as exc:
+            raise HTTPException(
+                status_code=500,
+                detail=f"Patched config.py failed syntax check — not committed: {exc}",
+            ) from exc
 
         # ── Commit ────────────────────────────────────────────────────────
         r = await client.put(url, headers=headers, json={

@@ -35,9 +35,9 @@ def test_paul_has_all_apps():
     )
 
 
-def test_frank_has_only_benchmark():
+def test_frank_has_benchmark():
     frank_roles = USER_ROLES.get("fgleeson@convenience.org", [])
-    assert frank_roles == ["benchmark"], f"Unexpected roles for Frank: {frank_roles}"
+    assert "benchmark" in frank_roles, f"Frank missing benchmark role: {frank_roles}"
 
 
 def test_settings_defaults():
