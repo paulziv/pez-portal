@@ -33,7 +33,7 @@ APP_REGISTRY = [
     {"slug": "stock", "title": "MarketMaker",
      "description": "Market intelligence terminal — live quotes, news synthesis, strategy lab, and AI council. Read-only; no trading capability.",
      "icon": "📈", "color": "#6741d9",
-     "url": "https://marketmaker-production-679a.up.railway.app", "external": True},
+     "url": "https://pezmarketmaker.up.railway.app", "external": True},
 ]
 
 # "admin" role maps to the admin card above; only users with this slug see it.
