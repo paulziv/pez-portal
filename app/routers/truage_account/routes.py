@@ -521,8 +521,8 @@ async def run_daily() -> str:
             await client.post(f"{_UPSTREAM}/refresh")
     except Exception:
         pass
-    # /audit/report is a blocking endpoint — retry up to 3× with a 2-min timeout each.
-    for attempt in range(3):
+    # /audit/report is a blocking endpoint — retry up to 5× with a 2-min timeout each.
+    for attempt in range(5):
         try:
             async with httpx.AsyncClient(timeout=120, follow_redirects=True) as client:
                 resp = await client.get(f"{_UPSTREAM}/audit/report")

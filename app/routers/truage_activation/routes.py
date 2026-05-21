@@ -596,9 +596,9 @@ async def run_daily() -> str:
             await client.post(f"{_UPSTREAM}/refresh")
     except Exception:
         pass
-    # Poll every 20s for up to ~5 minutes. Real reports are >10 KB;
+    # Poll every 20s for up to ~10 minutes. Real reports are >10 KB;
     # "creating report" placeholders are a few hundred bytes.
-    for attempt in range(15):
+    for attempt in range(30):
         await asyncio.sleep(20)
         try:
             async with httpx.AsyncClient(timeout=30) as client:
