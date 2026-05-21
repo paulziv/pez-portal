@@ -28,24 +28,28 @@ Auth0-gated internal app portal for NACS / TruAge tools. Deployed on Railway.
 - **Platform**: Railway (auto-deploys from `paulziv/pez-portal` main branch)
 - **Env vars** required on Railway:
   - `AUTH0_CLIENT_ID`, `AUTH0_DOMAIN`, `GITHUB_TOKEN`, `GITHUB_REPO`, `GITHUB_BRANCH`
+  - `CRON_SECRET` — protects `/api/cron/run-daily`
+  - `RESEND_API_KEY` — email delivery for daily reports (get from resend.com)
+  - `RAILWAY_API_TOKEN` — needed for admin panel schedule editor (GraphQL API)
 - Deploy: push to GitHub main → Railway auto-deploys.
 
 ## Key files
 
 ```
 app/
-  main.py              # FastAPI app factory, /api/me, /health
-  config.py            # APP_REGISTRY, USER_ROLES, Settings (pydantic-settings)
+  main.py              # FastAPI app factory, /api/me, /health, /api/cron/run-daily, /api/daily-status
+  config.py            # APP_REGISTRY, USER_ROLES, EMAIL_SUBSCRIPTIONS, Settings
   auth.py              # JWT verification, require_auth, require_app dependencies
+  daily_cache.py       # In-memory DailyCache; account_cache + activation_cache singletons
+  email_service.py     # Resend-based email delivery for daily reports
   static/
     portal.html        # Login card + app grid SPA (Auth0 client-side)
     logo.gif           # NACS Innovation animated logo (loop=3, ~37 frames)
-    nacs-innovation-logo.gif  # New cream-bg lightbulb-with-rings logo (loop=3)
+    nacs-innovation-logo.gif  # Cream-bg lightbulb-with-rings logo (loop=3)
   routers/
-    admin/routes.py          # Admin panel — edit USER_ROLES via GitHub API
-    stock/routes.py          # Market Dashboard — Deribit public API proxy
-    truage_activation/routes.py   # TruAge Activation report
-    truage_account/routes.py      # TruAge Account Manager
+    admin/routes.py          # Admin panel — USER_ROLES, EMAIL_SUBSCRIPTIONS, report schedule
+    truage_activation/routes.py   # TruAge Activation — proxies nacstar, caches daily
+    truage_account/routes.py      # TruAge Account Manager — proxies nacstam, caches daily
     truage_dictionary/routes.py   # TruAge Data Dictionary
 tests/
   test_config.py       # APP_REGISTRY structure, USER_ROLES integrity
@@ -124,14 +128,15 @@ MarketMaker (`paulziv/marketmaker` → `stock-tracker-production-0582.up.railway
 The Railway service slug is `stock` for role compatibility. The GitHub repo `paulziv/marketmaker`
 is the source of truth for what is deployed — **stock-tracker code must never be pushed there.**
 
-## BenchPoint integration (open items)
+## BenchPoint integration
 
 BenchPoint (`https://nacs-990-benchmark-production.up.railway.app/ui/`) is a service
 inside the `nacs-portal` Railway project (service: `nacs-990-benchmark`).
 
-- **SSO**: BenchPoint uses a different Auth0 client ID — users must log in twice.
-  Fix: update BenchPoint to use client ID `4X6INHXnVCqb4M1KqUTVK9vDBhzT0q5d`
-  (same as pez-portal) on tenant `pezdev.us.auth0.com`.
+- **SSO**: ✅ Resolved — BenchPoint now uses the same Auth0 client ID
+  (`4X6INHXnVCqb4M1KqUTVK9vDBhzT0q5d`) and `getIdTokenClaims().__raw` token pattern.
+  Silent iframe auth (`getTokenSilently()`) was removed — it hangs in Chrome with
+  third-party cookie blocking.
 - **Brand colours**: BenchPoint UI has some off-brand colours (Bootstrap defaults).
   Needs CSS update in the `paulziv/nacs-990-benchmark` repo.
 
@@ -164,8 +169,13 @@ git push origin main   # Railway auto-deploys
   and `GITHUB_REPO=paulziv/pez-portal` set on Railway.
 - **Railway auth**: use `RAILWAY_API_TOKEN` (not `RAILWAY_TOKEN`) for non-interactive
   CLI and GraphQL API access. Token from https://railway.com/account/tokens.
-- **Daily report cron**: add `CRON_SECRET` env var to pez-portal on Railway, then
-  create a Railway cron service that runs daily at 7 AM CT (13:00 UTC):
-  `curl -s -X POST https://nacsportal.up.railway.app/api/cron/run-daily -H "Authorization: Bearer $CRON_SECRET"`
-  Both truage_account and truage_activation reports are populated in one call.
-  In-memory cache — clears on redeploy, repopulated by next cron run.
+- **Daily report cron**: Railway cron service `daily-reports-cron` (ID: `a42ef700`)
+  runs at 13:00 UTC (7 AM CT) using image `alpine/curl`. startCommand hardcodes the
+  token directly in the URL — Railway does NOT reliably expand `$VAR` in startCommands:
+  `curl -fsS -X POST https://nacsportal.up.railway.app/api/cron/run-daily?token=TOKEN`
+  Both truage_account and truage_activation are populated in one call (~4 min).
+  In-memory cache — clears on redeploy, repopulated by next scheduled cron run.
+  Endpoint also accepts `Authorization: Bearer TOKEN` header for manual curl calls.
+- **Proxied report nav bar**: `_inject_base()` in truage_account and truage_activation
+  routers strips `<nav>` elements from the upstream HTML so the nacstam/nacstar app's
+  own navigation (Account Management / Dictionary / Settings) doesn't show in the iframe.
