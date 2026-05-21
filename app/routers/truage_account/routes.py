@@ -554,5 +554,3 @@ def _send_subscribed_emails() -> None:
             report_url=report_url,
             generated_at=account_cache.generated_at,
         )
-erated_at,
-        )
