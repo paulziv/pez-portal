@@ -104,7 +104,7 @@ class Settings(BaseSettings):
     github_branch: str = Field("main")
     cron_secret: str = Field("")
     resend_api_key: str = Field("")
-    resend_from: str = Field("Innovation Portal <portal@nacsportal.up.railway.app>")
+    resend_from: str = Field("Innovation Portal <portal@dashboard.mytruage.org>")
     railway_api_token: str = Field("")
     railway_cron_service_id: str = Field("a42ef700-4ced-4e14-a533-7e6e04266b30")
     railway_environment_id: str = Field("373d0dd2-7ba2-4bd7-8e47-a031738d47aa")
