@@ -66,6 +66,11 @@ EMAIL_SUBSCRIPTIONS: dict[str, list[str]] = {
 }
 
 USER_ROLES: dict[str, list[str]] = {
+    "emcfarlane@mytruage.org": [
+        "truage_activation",
+        "truage_account",
+        "truage_dictionary",
+    ],
     "fgleeson@convenience.org": [
         "benchmark",
         "stock",
