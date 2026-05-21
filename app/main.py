@@ -89,11 +89,12 @@ def create_app() -> FastAPI:
         })
 
     @app.post("/api/cron/run-daily", include_in_schema=False)
-    async def cron_run_daily(request: Request) -> JSONResponse:
+    async def cron_run_daily(request: Request, token: str = "") -> JSONResponse:
         if not settings.cron_secret:
             return JSONResponse({"error": "CRON_SECRET not configured"}, status_code=503)
-        auth = request.headers.get("Authorization", "")
-        if auth != f"Bearer {settings.cron_secret}":
+        # Accept secret via ?token= query param (Railway cron) or Authorization header
+        auth_header = request.headers.get("Authorization", "")
+        if token != settings.cron_secret and auth_header != f"Bearer {settings.cron_secret}":
             return JSONResponse({"error": "Unauthorized"}, status_code=401)
         # Fire background tasks — each triggers upstream refresh then waits ~75s
         # before caching. Return immediately so the cron caller doesn't time out.
