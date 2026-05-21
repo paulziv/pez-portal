@@ -18,6 +18,7 @@ import asyncio
 
 from app.config import get_settings, APP_REGISTRY, USER_ROLES
 from app.daily_cache import account_cache, activation_cache
+from app.report_tokens import redeem_token, purge_expired
 from app.routers.admin.routes import router as admin_router
 from app.routers.truage_activation.routes import router as truage_activation_router, run_daily as run_activation_daily
 from app.routers.truage_account.routes import router as truage_account_router, run_daily as run_account_daily
@@ -98,9 +99,44 @@ def create_app() -> FastAPI:
             return JSONResponse({"error": "Unauthorized"}, status_code=401)
         # Fire background tasks — each triggers upstream refresh then waits ~75s
         # before caching. Return immediately so the cron caller doesn't time out.
+        purge_expired()
         asyncio.create_task(run_account_daily())
         asyncio.create_task(run_activation_daily())
         return JSONResponse({"status": "triggered"})
+
+    @app.get("/report/{token}", include_in_schema=False)
+    async def public_report(token: str) -> Response:
+        """Unauthenticated magic-link report viewer. Token valid for 24 hours."""
+        slug = redeem_token(token)
+        if not slug:
+            return HTMLResponse("""
+<!DOCTYPE html><html><head><meta charset="UTF-8">
+<style>body{font-family:sans-serif;display:flex;align-items:center;justify-content:center;
+min-height:100vh;margin:0;background:#F5F0E8;}
+.box{background:#fff;border:1px solid #DDD8CE;border-left:6px solid #C0392B;
+border-radius:10px;padding:2.5rem;max-width:480px;text-align:center;}
+h2{color:#1A2332;margin:0 0 0.75rem;}p{color:#7A7060;font-size:0.9rem;line-height:1.6;}</style>
+</head><body><div class="box">
+<h2>Link Expired</h2>
+<p>This report link has expired or is invalid.<br>
+A fresh link arrives with each daily email at 6 AM CT.</p>
+</div></body></html>""", status_code=410)
+
+        cache = account_cache if slug == "truage_account" else activation_cache
+        if not cache.available:
+            return HTMLResponse("""
+<!DOCTYPE html><html><head><meta charset="UTF-8">
+<style>body{font-family:sans-serif;display:flex;align-items:center;justify-content:center;
+min-height:100vh;margin:0;background:#F5F0E8;}
+.box{background:#fff;border:1px solid #DDD8CE;border-left:6px solid #e6b800;
+border-radius:10px;padding:2.5rem;max-width:480px;text-align:center;}
+h2{color:#1A2332;margin:0 0 0.75rem;}p{color:#7A7060;font-size:0.9rem;line-height:1.6;}</style>
+</head><body><div class="box">
+<h2>Report Not Yet Available</h2>
+<p>Today's report is still generating. Try again in a few minutes.</p>
+</div></body></html>""", status_code=503)
+
+        return Response(content=cache.html, media_type="text/html; charset=utf-8")
 
     @app.get("/", include_in_schema=False)
     async def portal() -> Response:

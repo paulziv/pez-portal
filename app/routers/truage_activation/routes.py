@@ -566,16 +566,16 @@ async def daily_content(user: UserClaims = Depends(_require)) -> HTMLResponse:
 
 @router.post("/email")
 async def email_report(user: UserClaims = Depends(_require)) -> JSONResponse:
-    """Send the cached daily report to the requesting user's email."""
+    """Send the cached daily report to the requesting user via magic link."""
     if not activation_cache.available:
         raise HTTPException(status_code=503, detail="Daily report not yet available — run the cron first.")
-    from datetime import date
-    filename = f"truage-activation-{date.today()}.html"
+    from app.report_tokens import mint_token
+    token = mint_token("truage_activation")
+    report_url = f"https://nacsportal.up.railway.app/report/{token}" if token else "https://nacsportal.up.railway.app"
     result = send_report(
         to=user.email,
         report_title="TruAge Activation Report",
-        html_content=activation_cache.html,
-        filename=filename,
+        report_url=report_url,
         generated_at=activation_cache.generated_at,
     )
     if not result["ok"]:
@@ -615,16 +615,16 @@ async def run_daily() -> str:
 def _send_subscribed_emails(slug: str, title: str) -> None:
     """Fire-and-forget: email all subscribed users for this report."""
     import app.config as _cfg
-    from datetime import date
+    from app.report_tokens import mint_token
     subscribers = [e for e, slugs in _cfg.EMAIL_SUBSCRIPTIONS.items() if slug in slugs]
     if not subscribers or not activation_cache.available:
         return
-    filename = f"{slug.replace('_', '-')}-{date.today()}.html"
     for email in subscribers:
+        token = mint_token(slug)
+        report_url = f"https://nacsportal.up.railway.app/report/{token}" if token else "https://nacsportal.up.railway.app"
         send_report(
             to=email,
             report_title=title,
-            html_content=activation_cache.html,
-            filename=filename,
+            report_url=report_url,
             generated_at=activation_cache.generated_at,
         )
