@@ -130,7 +130,7 @@ is the source of truth for what is deployed — **stock-tracker code must never 
 
 ## BenchPoint integration
 
-BenchPoint (`https://nacs-990-benchmark-production.up.railway.app/ui/`) is a service
+BenchPoint (`https://benchpoint.dashboard.mytruage.org/ui/`) is a service
 inside the `nacs-portal` Railway project (service: `nacs-990-benchmark`).
 
 - **SSO**: ✅ Resolved — BenchPoint now uses the same Auth0 client ID

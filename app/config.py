@@ -17,7 +17,7 @@ APP_REGISTRY = [
     {"slug": "benchmark", "title": "BenchPoint",
      "description": "990 peer benchmarking — Gemini-powered nonprofit BI comparisons.",
      "icon": "📊", "color": "#005eb8",
-     "url": "https://nacs-990-benchmark-production.up.railway.app/ui/", "external": True},
+     "url": "https://benchpoint.dashboard.mytruage.org/ui/", "external": True},
     {"slug": "truage_activation", "title": "TruAge Activation",
      "description": "Live HubSpot pull — activation rates across all retailer accounts. Allow 30–60 seconds for the report to run.",
      "icon": "🪪", "color": "#087f5b",
