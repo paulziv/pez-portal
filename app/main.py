@@ -104,6 +104,42 @@ def create_app() -> FastAPI:
         asyncio.create_task(run_activation_daily())
         return JSONResponse({"status": "triggered"})
 
+    @app.post("/api/cron/watchdog", include_in_schema=False)
+    async def cron_watchdog(request: Request, token: str = "") -> JSONResponse:
+        """Check that both daily reports ran today; alert Paul if either is missing."""
+        if not settings.cron_secret:
+            return JSONResponse({"error": "CRON_SECRET not configured"}, status_code=503)
+        auth_header = request.headers.get("Authorization", "")
+        if token != settings.cron_secret and auth_header != f"Bearer {settings.cron_secret}":
+            return JSONResponse({"error": "Unauthorized"}, status_code=401)
+
+        from datetime import date, timezone
+        from app.email_service import send_report
+
+        today = date.today()
+        missing = []
+        for cache, label in [
+            (account_cache,    "TruAge Account Manager"),
+            (activation_cache, "TruAge Activation"),
+        ]:
+            if not cache.available:
+                missing.append(label)
+            elif cache.generated_at:
+                gen_date = cache.generated_at.replace(tzinfo=None).date() if hasattr(cache.generated_at, 'date') else None
+                if gen_date != today:
+                    missing.append(label)
+
+        if missing:
+            send_report(
+                to="ziv.paul@gmail.com",
+                report_title=f"⚠️ Daily Report Alert — {', '.join(missing)} not delivered",
+                report_url="https://dashboard.mytruage.org/api/daily-status",
+                generated_at=None,
+            )
+            return JSONResponse({"status": "alert_sent", "missing": missing})
+
+        return JSONResponse({"status": "ok", "all_reports_delivered": True})
+
     @app.get("/report/{token}", include_in_schema=False)
     async def public_report(token: str) -> Response:
         """Unauthenticated magic-link report viewer. Token valid for 24 hours."""
