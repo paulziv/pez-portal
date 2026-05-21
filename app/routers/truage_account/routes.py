@@ -460,7 +460,7 @@ async def daily_content(user: UserClaims = Depends(_require)) -> HTMLResponse:
         raise HTTPException(status_code=503, detail="Daily report not yet available")
     return HTMLResponse(
         content=account_cache.html,
-        headers={"X-Generated-At": account_cache.generated_at.isoformat() + "Z"},
+        headers={"X-Generated-At": account_cache.generated_at.replace(tzinfo=None).isoformat() + "Z"},
     )
 
 
@@ -552,5 +552,4 @@ def _send_subscribed_emails() -> None:
             to=email,
             report_title="TruAge Account Manager Report",
             report_url=report_url,
-            generated_at=account_cache.generated_at,
-        )
+            generated_at=account_cache.gen

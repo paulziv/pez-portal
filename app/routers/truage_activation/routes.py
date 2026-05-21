@@ -560,7 +560,7 @@ async def daily_content(user: UserClaims = Depends(_require)) -> HTMLResponse:
         raise HTTPException(status_code=503, detail="Daily report not yet available")
     return HTMLResponse(
         content=activation_cache.html,
-        headers={"X-Generated-At": activation_cache.generated_at.isoformat() + "Z"},
+        headers={"X-Generated-At": activation_cache.generated_at.replace(tzinfo=None).isoformat() + "Z"},
     )
 
 
@@ -626,5 +626,4 @@ def _send_subscribed_emails(slug: str, title: str) -> None:
             to=email,
             report_title=title,
             report_url=report_url,
-            generated_at=activation_cache.generated_at,
-        )
+            generated_at=activation_cache.gen

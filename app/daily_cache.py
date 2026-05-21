@@ -112,7 +112,7 @@ class DailyCache:
     def to_status(self) -> dict:
         return {
             "available": self.available,
-            "generated_at": self.generated_at.isoformat() + "Z" if self.generated_at else None,
+            "generated_at": self.generated_at.replace(tzinfo=None).isoformat() + "Z" if self.generated_at else None,
         }
 
 
@@ -121,4 +121,4 @@ class DailyCache:
 _ensure_table()
 
 account_cache    = DailyCache("truage_account")
-activation_cache = DailyCache("truage_activation")
+activation_cache = DailyCache(
