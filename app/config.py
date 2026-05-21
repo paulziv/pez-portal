@@ -76,7 +76,6 @@ USER_ROLES: dict[str, list[str]] = {
         "truage_dictionary",
     ],
     "fgleeson@convenience.org": [
-        "benchmark",
         "stock",
         "truage_account",
         "truage_activation",
