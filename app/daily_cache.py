@@ -121,4 +121,4 @@ class DailyCache:
 _ensure_table()
 
 account_cache    = DailyCache("truage_account")
-activation_cache = DailyCache(
+activation_cache = DailyCache("truage_activation")

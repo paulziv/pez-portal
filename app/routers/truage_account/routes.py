@@ -552,4 +552,7 @@ def _send_subscribed_emails() -> None:
             to=email,
             report_title="TruAge Account Manager Report",
             report_url=report_url,
-            generated_at=account_cache.gen
+            generated_at=account_cache.generated_at,
+        )
+erated_at,
+        )

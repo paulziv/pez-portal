@@ -626,4 +626,7 @@ def _send_subscribed_emails(slug: str, title: str) -> None:
             to=email,
             report_title=title,
             report_url=report_url,
-            generated_at=activation_cache.gen
+            generated_at=activation_cache.generated_at,
+        )
+erated_at,
+        )
