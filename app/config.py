@@ -38,7 +38,12 @@ APP_REGISTRY = [
 
 # "admin" role maps to the admin card above; only users with this slug see it.
 # email → list of report slugs they're subscribed to for daily delivery
-EMAIL_SUBSCRIPTIONS: dict[str, list[str]] = {}
+EMAIL_SUBSCRIPTIONS: dict[str, list[str]] = {
+    "ziv.paul@gmail.com": [
+        "truage_activation",
+        "truage_account",
+    ],
+}
 
 USER_ROLES: dict[str, list[str]] = {
     "fgleeson@convenience.org": [
