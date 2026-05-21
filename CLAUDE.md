@@ -179,3 +179,10 @@ git push origin main   # Railway auto-deploys
 - **Proxied report nav bar**: `_inject_base()` in truage_account and truage_activation
   routers strips `<nav>` elements from the upstream HTML so the nacstam/nacstar app's
   own navigation (Account Management / Dictionary / Settings) doesn't show in the iframe.
+- **Magic-link report delivery**: emails contain a 24-hour token URL (`/report/{token}`)
+  — no portal login required. Token stored in `report_tokens` Postgres table. Expired
+  tokens are purged on each cron run. See `app/report_tokens.py`.
+- **Persistent report cache**: `daily_cache.py` writes to `report_cache` Postgres table
+  on every `set()` and restores from DB on startup. Redeploys no longer wipe the cache.
+- **Email sender**: `portal@dashboard.mytruage.org` (verified Resend domain).
+  `RESEND_FROM` env var on Railway.

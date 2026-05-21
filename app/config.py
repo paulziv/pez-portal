@@ -123,7 +123,7 @@ class Settings(BaseSettings):
     )
     app_port: int = Field(8080)
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR"] = "INFO"
-    app_version: str = "1.1.0"
+    app_version: str = "1.2.0"
     auth0_domain: str = Field("pezdev.us.auth0.com")
     auth0_client_id: str = Field("4X6INHXnVCqb4M1KqUTVK9vDBhzT0q5d")
     auth0_audience: str = Field("")
