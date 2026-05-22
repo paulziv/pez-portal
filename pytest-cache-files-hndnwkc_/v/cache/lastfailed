@@ -1,3 +1,7 @@
 {
-  "tests/test_routes.py::test_portal_returns_html": true
+  "tests/test_routes.py::test_portal_returns_html": true,
+  "tests/test_routes.py::test_stock_no_token": true,
+  "tests/test_routes.py::test_truage_activation_no_token": true,
+  "tests/test_routes.py::test_truage_account_no_token": true,
+  "tests/test_routes.py::test_admin_no_token": true
 }
