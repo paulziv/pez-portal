@@ -34,6 +34,10 @@ APP_REGISTRY = [
      "description": "Market intelligence terminal — live quotes, news synthesis, strategy lab, and AI council. Read-only; no trading capability.",
      "icon": "📈", "color": "#6741d9",
      "url": "https://pezmarketmaker.up.railway.app", "external": True},
+    {"slug": "app_downloads", "title": "App Downloads",
+     "description": "Daily install and update counts for the TruAge mobile app — App Store and Google Play.",
+     "icon": "📱", "color": "#2563EB",
+     "url": "/apps/app-downloads/", "external": False},
 ]
 
 # "admin" role maps to the admin card above; only users with this slug see it.
@@ -107,6 +111,7 @@ USER_ROLES: dict[str, list[str]] = {
     ],
     "ziv.paul@gmail.com": [
         "admin",
+        "app_downloads",
         "benchmark",
         "truage_activation",
         "truage_account",
@@ -136,6 +141,9 @@ class Settings(BaseSettings):
     railway_api_token: str = Field("")
     railway_cron_service_id: str = Field("a42ef700-4ced-4e14-a533-7e6e04266b30")
     railway_environment_id: str = Field("373d0dd2-7ba2-4bd7-8e47-a031738d47aa")
+    apple_key_id: str = Field("")
+    apple_issuer_id: str = Field("")
+    apple_private_key: str = Field("")
 
 
 @lru_cache

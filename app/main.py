@@ -23,6 +23,7 @@ from app.routers.admin.routes import router as admin_router
 from app.routers.truage_activation.routes import router as truage_activation_router, run_daily as run_activation_daily
 from app.routers.truage_account.routes import router as truage_account_router, run_daily as run_account_daily
 from app.routers.stock.routes import router as stock_router
+from app.routers.app_downloads.routes import router as app_downloads_router, run_daily as run_downloads_daily
 
 _STATIC_DIR = Path(__file__).parent / "static"
 
@@ -102,6 +103,7 @@ def create_app() -> FastAPI:
         purge_expired()
         asyncio.create_task(run_account_daily())
         asyncio.create_task(run_activation_daily())
+        asyncio.create_task(run_downloads_daily())
         return JSONResponse({"status": "triggered"})
 
     @app.post("/api/cron/watchdog", include_in_schema=False)
@@ -208,6 +210,7 @@ h2{color:#1A2332;margin:0 0 0.75rem;}p{color:#7A7060;font-size:0.9rem;line-heigh
     app.include_router(truage_activation_router)
     app.include_router(truage_account_router)
     app.include_router(stock_router)
+    app.include_router(app_downloads_router)
 
     app.mount("/static", StaticFiles(directory=str(_STATIC_DIR)), name="static")
 
