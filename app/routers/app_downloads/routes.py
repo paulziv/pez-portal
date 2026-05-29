@@ -222,8 +222,6 @@ async def _fetch_google(report_date: date) -> tuple[int, int]:
 # ── Daily fetch (called from main cron) ──────────────────────────────────────
 
 async def run_daily() -> str:
-    yesterday = date.today() - timedelta(days=1)
-
     has_apple_creds = all([
         os.environ.get("APPLE_KEY_ID"),
         os.environ.get("APPLE_ISSUER_ID"),
@@ -232,20 +230,24 @@ async def run_daily() -> str:
     if not has_apple_creds:
         return "error — Apple credentials not set (need APPLE_KEY_ID, APPLE_ISSUER_ID, APPLE_PRIVATE_KEY on Railway)"
 
-    if _has_data(yesterday, "apple"):
-        return f"skipped — already have Apple data for {yesterday}"
+    # Check the last 3 days so weekends aren't skipped when cron runs Mon–Fri
+    fetched = []
+    for days_ago in range(1, 4):
+        report_date = date.today() - timedelta(days=days_ago)
+        if _has_data(report_date, "apple"):
+            continue
+        apple_dl, apple_up = await _fetch_apple(report_date)
+        google_dl, google_up = await _fetch_google(report_date)
+        if apple_dl > 0 or apple_up > 0:
+            _upsert(report_date, "apple", apple_dl, apple_up)
+        if os.environ.get("GOOGLE_PLAY_CREDENTIALS") and (google_dl > 0 or google_up > 0):
+            _upsert(report_date, "google", google_dl, google_up)
+        log.info("app_downloads: %s — apple dl=%d up=%d", report_date, apple_dl, apple_up)
+        fetched.append(f"{report_date}: {apple_dl} dl")
 
-    apple_dl, apple_up = await _fetch_apple(yesterday)
-    google_dl, google_up = await _fetch_google(yesterday)
-
-    if apple_dl > 0 or apple_up > 0:
-        _upsert(yesterday, "apple", apple_dl, apple_up)
-    if os.environ.get("GOOGLE_PLAY_CREDENTIALS") and (google_dl > 0 or google_up > 0):
-        _upsert(yesterday, "google", google_dl, google_up)
-
-    log.info("app_downloads: %s — apple dl=%d up=%d google dl=%d up=%d",
-             yesterday, apple_dl, apple_up, google_dl, google_up)
-    return f"ok — apple: {apple_dl} downloads {apple_up} updates (report date: {yesterday})"
+    if not fetched:
+        return "skipped — last 3 days already in DB"
+    return "ok — " + ", ".join(fetched)
 
 
 async def run_backfill(days: int = 365) -> str:
