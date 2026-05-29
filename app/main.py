@@ -106,6 +106,17 @@ def create_app() -> FastAPI:
         asyncio.create_task(run_downloads_daily())
         return JSONResponse({"status": "triggered"})
 
+    @app.post("/api/cron/run-downloads", include_in_schema=False)
+    async def cron_run_downloads(request: Request, token: str = "") -> JSONResponse:
+        """Manual trigger for app downloads fetch only — no emails sent."""
+        if not settings.cron_secret:
+            return JSONResponse({"error": "CRON_SECRET not configured"}, status_code=503)
+        auth_header = request.headers.get("Authorization", "")
+        if token != settings.cron_secret and auth_header != f"Bearer {settings.cron_secret}":
+            return JSONResponse({"error": "Unauthorized"}, status_code=401)
+        result = await run_downloads_daily()
+        return JSONResponse({"status": "ok", "result": result})
+
     @app.post("/api/cron/watchdog", include_in_schema=False)
     async def cron_watchdog(request: Request, token: str = "") -> JSONResponse:
         """Check that both daily reports ran today; alert Paul if either is missing."""
