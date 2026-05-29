@@ -208,14 +208,26 @@ async def _fetch_google(report_date: date) -> tuple[int, int]:
 
 async def run_daily() -> str:
     yesterday = date.today() - timedelta(days=1)
+
+    has_apple_creds = all([
+        os.environ.get("APPLE_KEY_ID"),
+        os.environ.get("APPLE_ISSUER_ID"),
+        os.environ.get("APPLE_PRIVATE_KEY"),
+    ])
+    if not has_apple_creds:
+        return "error — Apple credentials not set (need APPLE_KEY_ID, APPLE_ISSUER_ID, APPLE_PRIVATE_KEY on Railway)"
+
     apple_dl, apple_up = await _fetch_apple(yesterday)
     google_dl, google_up = await _fetch_google(yesterday)
-    _upsert(yesterday, "apple", apple_dl, apple_up)
-    if os.environ.get("GOOGLE_PLAY_CREDENTIALS"):
+
+    if apple_dl > 0 or apple_up > 0:
+        _upsert(yesterday, "apple", apple_dl, apple_up)
+    if os.environ.get("GOOGLE_PLAY_CREDENTIALS") and (google_dl > 0 or google_up > 0):
         _upsert(yesterday, "google", google_dl, google_up)
+
     log.info("app_downloads: %s — apple dl=%d up=%d google dl=%d up=%d",
              yesterday, apple_dl, apple_up, google_dl, google_up)
-    return f"ok — apple: {apple_dl} downloads {apple_up} updates"
+    return f"ok — apple: {apple_dl} downloads {apple_up} updates (report date: {yesterday})"
 
 
 # ── HTML shell ────────────────────────────────────────────────────────────────
