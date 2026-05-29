@@ -59,6 +59,23 @@ def _ensure_table() -> None:
         conn.close()
 
 
+def _has_data(report_date: date, platform: str) -> bool:
+    conn = _get_conn()
+    if not conn:
+        return False
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT 1 FROM app_downloads WHERE report_date = %s AND platform = %s",
+                (report_date, platform),
+            )
+            return cur.fetchone() is not None
+    except Exception:
+        return False
+    finally:
+        conn.close()
+
+
 def _upsert(report_date: date, platform: str, downloads: int, updates: int) -> None:
     conn = _get_conn()
     if not conn:
@@ -69,9 +86,7 @@ def _upsert(report_date: date, platform: str, downloads: int, updates: int) -> N
                 cur.execute("""
                     INSERT INTO app_downloads (report_date, platform, downloads, updates)
                     VALUES (%s, %s, %s, %s)
-                    ON CONFLICT (report_date, platform) DO UPDATE
-                        SET downloads = EXCLUDED.downloads,
-                            updates   = EXCLUDED.updates
+                    ON CONFLICT (report_date, platform) DO NOTHING
                 """, (report_date, platform, downloads, updates))
     except Exception as exc:
         log.warning("app_downloads: upsert failed: %s", exc)
@@ -79,7 +94,7 @@ def _upsert(report_date: date, platform: str, downloads: int, updates: int) -> N
         conn.close()
 
 
-def _fetch_history(days: int = 30) -> list[dict]:
+def _fetch_history(days: int = 365) -> list[dict]:
     conn = _get_conn()
     if not conn:
         return []
@@ -217,6 +232,9 @@ async def run_daily() -> str:
     if not has_apple_creds:
         return "error — Apple credentials not set (need APPLE_KEY_ID, APPLE_ISSUER_ID, APPLE_PRIVATE_KEY on Railway)"
 
+    if _has_data(yesterday, "apple"):
+        return f"skipped — already have Apple data for {yesterday}"
+
     apple_dl, apple_up = await _fetch_apple(yesterday)
     google_dl, google_up = await _fetch_google(yesterday)
 
@@ -228,6 +246,37 @@ async def run_daily() -> str:
     log.info("app_downloads: %s — apple dl=%d up=%d google dl=%d up=%d",
              yesterday, apple_dl, apple_up, google_dl, google_up)
     return f"ok — apple: {apple_dl} downloads {apple_up} updates (report date: {yesterday})"
+
+
+async def run_backfill(days: int = 365) -> str:
+    """Fetch up to 365 days of history, skipping dates already in DB."""
+    import asyncio
+    has_apple_creds = all([
+        os.environ.get("APPLE_KEY_ID"),
+        os.environ.get("APPLE_ISSUER_ID"),
+        os.environ.get("APPLE_PRIVATE_KEY"),
+    ])
+    if not has_apple_creds:
+        return "error — Apple credentials not set"
+
+    fetched = skipped = errors = 0
+    for days_ago in range(1, days + 1):
+        report_date = date.today() - timedelta(days=days_ago)
+        if _has_data(report_date, "apple"):
+            skipped += 1
+            continue
+        try:
+            apple_dl, apple_up = await _fetch_apple(report_date)
+            if apple_dl > 0 or apple_up > 0:
+                _upsert(report_date, "apple", apple_dl, apple_up)
+            fetched += 1
+        except Exception as exc:
+            log.warning("app_downloads backfill: error on %s: %s", report_date, exc)
+            errors += 1
+        await asyncio.sleep(0.3)
+
+    log.info("app_downloads backfill complete: fetched=%d skipped=%d errors=%d", fetched, skipped, errors)
+    return f"backfill complete — fetched {fetched} days, skipped {skipped} existing, {errors} errors"
 
 
 # ── HTML shell ────────────────────────────────────────────────────────────────
@@ -313,7 +362,7 @@ _SHELL = """<!DOCTYPE html>
     <div class="card total">
       <div class="card-label">Total Downloads</div>
       <div class="card-value" id="stat-total">—</div>
-      <div class="card-sub">All platforms &middot; 30 days</div>
+      <div class="card-sub">All platforms &middot; all time</div>
     </div>
     <div class="card apple">
       <div class="card-label">App Store (iOS)</div>
@@ -328,7 +377,7 @@ _SHELL = """<!DOCTYPE html>
   </div>
 
   <div class="chart-wrap">
-    <div class="section-title">Daily Downloads &mdash; Last 30 Days</div>
+    <div class="section-title">Daily Downloads &mdash; Last 365 Days</div>
     <canvas id="dlChart" height="75"></canvas>
   </div>
 
@@ -379,57 +428,62 @@ function render(d) {
   document.getElementById('stat-total').textContent  = fmt(d.total_apple + d.total_google);
   document.getElementById('stat-apple').textContent  = fmt(d.total_apple);
   document.getElementById('stat-google').textContent = fmt(d.total_google);
-  document.getElementById('stat-apple-up').textContent  = fmt(d.total_apple_updates) + ' updates · 30 days';
-  document.getElementById('stat-google-up').textContent = fmt(d.total_google_updates) + ' updates · 30 days';
+  document.getElementById('stat-apple-up').textContent  = fmt(d.total_apple_updates) + ' updates · all time';
+  document.getElementById('stat-google-up').textContent = fmt(d.total_google_updates) + ' updates · all time';
 
-  // Chart
-  const labels = d.chart_dates;
+  // Line chart
   new Chart(document.getElementById('dlChart'), {
-    type: 'bar',
+    type: 'line',
     data: {
-      labels,
+      labels: d.chart_dates,
       datasets: [
-        { label: 'App Store', data: d.chart_apple, backgroundColor: 'rgba(85,85,85,0.75)', stack: 's' },
-        { label: 'Google Play', data: d.chart_google, backgroundColor: 'rgba(66,133,244,0.75)', stack: 's' },
+        {
+          label: 'App Store',
+          data: d.chart_apple,
+          borderColor: 'rgba(85,85,85,0.9)',
+          backgroundColor: 'rgba(85,85,85,0.08)',
+          fill: true, tension: 0.3, pointRadius: 1, pointHoverRadius: 4,
+        },
+        {
+          label: 'Google Play',
+          data: d.chart_google,
+          borderColor: 'rgba(66,133,244,0.9)',
+          backgroundColor: 'rgba(66,133,244,0.08)',
+          fill: true, tension: 0.3, pointRadius: 1, pointHoverRadius: 4,
+        },
       ]
     },
     options: {
       responsive: true,
+      interaction: { mode: 'index', intersect: false },
       plugins: { legend: { position: 'top' } },
-      scales: { x: { stacked: true }, y: { stacked: true, beginAtZero: true } }
+      scales: {
+        x: { ticks: { maxTicksLimit: 12, maxRotation: 0 } },
+        y: { beginAtZero: true }
+      }
     }
   });
 
-  // Table
+  // Monthly table
   const wrap = document.getElementById('table-wrap');
-  if (!d.rows || !d.rows.length) {
+  if (!d.monthly || !d.monthly.length) {
     wrap.innerHTML = '<div class="no-data">No data yet — check back after the first daily sync.</div>';
   } else {
-    const byDate = {};
-    for (const r of d.rows) {
-      if (!byDate[r.date]) byDate[r.date] = { apple_dl:0, apple_up:0, google_dl:0, google_up:0 };
-      if (r.platform === 'apple') { byDate[r.date].apple_dl = r.downloads; byDate[r.date].apple_up = r.updates; }
-      else                        { byDate[r.date].google_dl = r.downloads; byDate[r.date].google_up = r.updates; }
-    }
-    const dates = Object.keys(byDate).sort().reverse();
-    const trs = dates.map(dt => {
-      const v = byDate[dt];
-      const total = v.apple_dl + v.google_dl;
+    const trs = d.monthly.map(m => {
+      const label = new Date(m.month + '-02').toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
       return `<tr>
-        <td>${dt}</td>
-        <td class="num">${fmt(v.apple_dl)}</td>
-        <td class="num muted">${fmt(v.apple_up)}</td>
-        <td class="num">${fmt(v.google_dl)}</td>
-        <td class="num muted">${fmt(v.google_up)}</td>
-        <td class="num bold">${fmt(total)}</td>
+        <td>${label}</td>
+        <td class="num">${fmt(m.apple_dl)}</td>
+        <td class="num">${fmt(m.google_dl)}</td>
+        <td class="num bold">${fmt(m.total)}</td>
       </tr>`;
     }).join('');
     wrap.innerHTML = `<table>
       <thead><tr>
-        <th>Date</th>
-        <th class="num">iOS DL</th><th class="num">iOS Updates</th>
-        <th class="num">Android DL</th><th class="num">Android Updates</th>
-        <th class="num">Total DL</th>
+        <th>Month</th>
+        <th class="num">App Store</th>
+        <th class="num">Google Play</th>
+        <th class="num">Total Downloads</th>
       </tr></thead>
       <tbody>${trs}</tbody>
     </table>`;
@@ -457,13 +511,13 @@ async def ui() -> str:
 
 @router.get("/data")
 async def data(user: UserClaims = Depends(_require)) -> JSONResponse:
-    rows = _fetch_history(30)
+    rows = _fetch_history(365)
     total_apple = sum(r["downloads"] for r in rows if r["platform"] == "apple")
     total_google = sum(r["downloads"] for r in rows if r["platform"] == "google")
     total_apple_updates = sum(r["updates"] for r in rows if r["platform"] == "apple")
     total_google_updates = sum(r["updates"] for r in rows if r["platform"] == "google")
 
-    # Aggregate daily totals for chart (sorted ascending for display)
+    # Daily totals for chart (ascending)
     by_date: dict[str, dict] = {}
     for r in rows:
         d = r["date"]
@@ -471,8 +525,24 @@ async def data(user: UserClaims = Depends(_require)) -> JSONResponse:
             by_date[d] = {"apple": 0, "google": 0}
         by_date[d][r["platform"]] += r["downloads"]
     chart_dates = sorted(by_date.keys())
-    chart_apple = [by_date[d]["apple"] for d in chart_dates]
+    chart_apple  = [by_date[d]["apple"]  for d in chart_dates]
     chart_google = [by_date[d]["google"] for d in chart_dates]
+
+    # Monthly aggregation for table
+    by_month: dict[str, dict] = {}
+    for r in rows:
+        month = r["date"][:7]  # YYYY-MM
+        if month not in by_month:
+            by_month[month] = {"apple_dl": 0, "google_dl": 0}
+        if r["platform"] == "apple":
+            by_month[month]["apple_dl"] += r["downloads"]
+        else:
+            by_month[month]["google_dl"] += r["downloads"]
+    monthly = [
+        {"month": m, "apple_dl": v["apple_dl"], "google_dl": v["google_dl"],
+         "total": v["apple_dl"] + v["google_dl"]}
+        for m, v in sorted(by_month.items(), reverse=True)
+    ]
 
     return JSONResponse({
         "rows": rows,
@@ -483,6 +553,7 @@ async def data(user: UserClaims = Depends(_require)) -> JSONResponse:
         "chart_dates": chart_dates,
         "chart_apple": chart_apple,
         "chart_google": chart_google,
+        "monthly": monthly,
     })
 
 

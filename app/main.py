@@ -23,7 +23,7 @@ from app.routers.admin.routes import router as admin_router
 from app.routers.truage_activation.routes import router as truage_activation_router, run_daily as run_activation_daily
 from app.routers.truage_account.routes import router as truage_account_router, run_daily as run_account_daily
 from app.routers.stock.routes import router as stock_router
-from app.routers.app_downloads.routes import router as app_downloads_router, run_daily as run_downloads_daily
+from app.routers.app_downloads.routes import router as app_downloads_router, run_daily as run_downloads_daily, run_backfill as run_downloads_backfill
 
 _STATIC_DIR = Path(__file__).parent / "static"
 
@@ -116,6 +116,17 @@ def create_app() -> FastAPI:
             return JSONResponse({"error": "Unauthorized"}, status_code=401)
         result = await run_downloads_daily()
         return JSONResponse({"status": "ok", "result": result})
+
+    @app.post("/api/cron/backfill-downloads", include_in_schema=False)
+    async def cron_backfill_downloads(request: Request, token: str = "") -> JSONResponse:
+        """One-shot backfill of up to 365 days of Apple download history. Runs in background."""
+        if not settings.cron_secret:
+            return JSONResponse({"error": "CRON_SECRET not configured"}, status_code=503)
+        auth_header = request.headers.get("Authorization", "")
+        if token != settings.cron_secret and auth_header != f"Bearer {settings.cron_secret}":
+            return JSONResponse({"error": "Unauthorized"}, status_code=401)
+        asyncio.create_task(run_downloads_backfill(365))
+        return JSONResponse({"status": "triggered", "message": "Backfilling 365 days in background — takes ~2 minutes"})
 
     @app.post("/api/cron/watchdog", include_in_schema=False)
     async def cron_watchdog(request: Request, token: str = "") -> JSONResponse:
