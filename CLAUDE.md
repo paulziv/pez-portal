@@ -1,4 +1,4 @@
-# Innovation Portal (pez-portal)
+# Innovation Portal (pez-portal) — v1.3.0
 
 Auth0-gated internal app portal for NACS / TruAge tools. Deployed on Railway.
 
@@ -31,6 +31,7 @@ Auth0-gated internal app portal for NACS / TruAge tools. Deployed on Railway.
   - `CRON_SECRET` — protects `/api/cron/run-daily`
   - `RESEND_API_KEY` — email delivery for daily reports (get from resend.com)
   - `RAILWAY_API_TOKEN` — needed for admin panel schedule editor (GraphQL API)
+  - `APPLE_KEY_ID`, `APPLE_ISSUER_ID`, `APPLE_PRIVATE_KEY` — App Store Connect API (app_downloads module)
 - Deploy: push to GitHub main → Railway auto-deploys.
 
 ## Key files
@@ -51,6 +52,7 @@ app/
     truage_activation/routes.py   # TruAge Activation — proxies nacstar, caches daily
     truage_account/routes.py      # TruAge Account Manager — proxies nacstam, caches daily
     truage_dictionary/routes.py   # TruAge Data Dictionary
+    app_downloads/routes.py       # App Downloads — Apple App Store daily install tracking
 tests/
   test_config.py       # APP_REGISTRY structure, USER_ROLES integrity
   test_routes.py       # HTTP-level route tests via TestClient
@@ -78,6 +80,7 @@ Per-app accent colors (card left border):
 - TruAge Account:    `#b36b00` amber
 - TruAge Dictionary: `#0c6e5c` dark teal
 - MarketMaker:       `#6741d9` purple (card) / `#36ECDE` mint (dashboard UI)
+- App Downloads:     `#2563EB` royal blue
 
 ## User / Role Management
 
@@ -86,7 +89,7 @@ The admin panel (`/apps/admin/`) lets admins edit this via the GitHub API —
 it commits a new `config.py` directly to the repo, triggering a Railway redeploy.
 
 Currently authorised users:
-- `ziv.paul@gmail.com` — all apps (admin, benchmark, truage_activation, truage_account, truage_dictionary, stock)
+- `ziv.paul@gmail.com` — all apps (admin, app_downloads, benchmark, truage_activation, truage_account, truage_dictionary, stock)
 - `fgleeson@convenience.org` — benchmark, stock, truage_account, truage_activation, truage_dictionary (intentional showcase)
 - `lorijoziv@gmail.com` — benchmark, stock
 - `lrountree@mytruage.org` — truage_activation, truage_account, truage_dictionary
@@ -186,3 +189,26 @@ git push origin main   # Railway auto-deploys
   on every `set()` and restores from DB on startup. Redeploys no longer wipe the cache.
 - **Email sender**: `portal@dashboard.mytruage.org` (verified Resend domain).
   `RESEND_FROM` env var on Railway.
+- **App Downloads cron**: fetches last 3 days on every run (covers weekend gaps when cron
+  is weekday-only). Uses `ON CONFLICT DO NOTHING` — safe to run multiple times. Data stored
+  permanently in `app_downloads` Postgres table (no expiry).
+- **App Downloads backfill**: `POST /api/cron/backfill-downloads?token=CRON_SECRET` — fires
+  once to pull up to 365 days of Apple history. Runs in background (~2 min). Safe to re-run.
+- **Apple API key**: Key ID `TZ558AFZ78`, Issuer ID `b5455d5d-e506-4fe3-9f1d-58b3ec91cdfb`,
+  vendor number `92675371`, app ID `6472091941` (SKU: org.mytruage.app.mobile.production).
+  Private key stored as `APPLE_PRIVATE_KEY` env var on Railway (full .p8 PEM content).
+- **Google Play**: slot is wired — set `GOOGLE_PLAY_CREDENTIALS` (service account JSON)
+  and `GOOGLE_PLAY_PACKAGE_NAME` on Railway to activate Android tracking.
+
+## App Downloads manual commands
+
+```bash
+# Test Apple fetch for yesterday only (no emails)
+curl -s -X POST "https://nacsportal.up.railway.app/api/cron/run-downloads?token=CRON_SECRET"
+
+# Trigger full 365-day backfill (background, ~2 min)
+curl -s -X POST "https://nacsportal.up.railway.app/api/cron/backfill-downloads?token=CRON_SECRET"
+
+# Check Railway logs for download activity
+railway logs --service pez-portal | grep app_download
+```
