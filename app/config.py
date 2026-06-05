@@ -38,6 +38,10 @@ APP_REGISTRY = [
      "description": "Daily install and update counts for the TruAge mobile app — App Store and Google Play.",
      "icon": "📱", "color": "#2563EB",
      "url": "/apps/app-downloads/", "external": False},
+    {"slug": "cstore_intel", "title": "C-Store Intel",
+     "description": "US convenience store database — 150k+ locations, chain analytics, market density, and gap intelligence.",
+     "icon": "🏪", "color": "#16a34a",
+     "url": "https://cstore-intel.up.railway.app", "external": True},
 ]
 
 # "admin" role maps to the admin card above; only users with this slug see it.
@@ -114,6 +118,7 @@ USER_ROLES: dict[str, list[str]] = {
     ],
     "pziv@convenience.org": [
         "benchmark",
+        "cstore_intel",
         "truage_activation",
         "truage_account",
         "truage_dictionary",
@@ -130,6 +135,7 @@ USER_ROLES: dict[str, list[str]] = {
         "admin",
         "app_downloads",
         "benchmark",
+        "cstore_intel",
         "truage_activation",
         "truage_account",
         "truage_dictionary",
