@@ -63,13 +63,15 @@ EMAIL_SUBSCRIPTIONS: dict[str, list[str]] = {
         "truage_activation",
         "truage_account",
     ],
+    "pziv@convenience.org": [
+        "truage_activation",
+        "truage_account",
+    ],
     "ssikorski@convenience.org": [
         "truage_activation",
         "truage_account",
     ],
     "ziv.paul@gmail.com": [
-        "truage_activation",
-        "truage_account",
     ],
 }
 
