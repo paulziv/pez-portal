@@ -85,18 +85,20 @@ USER_ROLES: dict[str, list[str]] = {
         "truage_account",
         "truage_dictionary",
         "app_downloads",
+        "cstore_intel",
     ],
     "fgleeson@convenience.org": [
-        "stock",
         "truage_account",
         "truage_activation",
         "truage_dictionary",
         "app_downloads",
         "benchmark",
+        "cstore_intel",
     ],
     "lorijoziv@gmail.com": [
         "benchmark",
         "stock",
+        "cstore_intel",
     ],
     "lrountree@mytruage.org": [
         "truage_activation",
@@ -130,6 +132,7 @@ USER_ROLES: dict[str, list[str]] = {
         "truage_account",
         "truage_dictionary",
         "app_downloads",
+        "cstore_intel",
     ],
     "ziv.paul@gmail.com": [
         "admin",
