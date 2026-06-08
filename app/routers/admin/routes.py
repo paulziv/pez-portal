@@ -315,13 +315,16 @@ _ADMIN_HTML = """<!DOCTYPE html>
     h2{font-size:1rem;font-weight:700;margin-bottom:1rem;color:var(--text);}
     .section{background:var(--panel);border:1px solid var(--border);
              border-radius:8px;padding:1.25rem;margin-bottom:1.5rem;}
-    table{width:100%;border-collapse:collapse;font-size:0.83rem;}
-    th{text-align:left;padding:0.45rem 0.6rem;color:var(--muted);
-       border-bottom:1px solid var(--border);font-weight:500;white-space:nowrap;}
-    td{padding:0.42rem 0.6rem;border-bottom:1px solid rgba(51,65,85,0.5);
+    .table-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch;}
+    table{width:100%;border-collapse:collapse;font-size:0.83rem;min-width:600px;}
+    th{text-align:center;padding:0.45rem 0.4rem;color:var(--muted);
+       border-bottom:1px solid var(--border);font-weight:500;white-space:nowrap;
+       font-size:0.75rem;}
+    th:first-child{text-align:left;}
+    td{padding:0.42rem 0.4rem;border-bottom:1px solid rgba(51,65,85,0.5);
        vertical-align:middle;}
     tr:last-child td{border-bottom:none;}
-    .email-cell{font-size:0.84rem;}
+    .email-cell{font-size:0.82rem;}
     .cb-cell{text-align:center;}
     input[type=checkbox]{width:15px;height:15px;accent-color:var(--accent);cursor:pointer;}
     .btn-del{background:none;border:none;cursor:pointer;color:var(--muted);
@@ -405,10 +408,12 @@ _ADMIN_HTML = """<!DOCTYPE html>
   <!-- Users section -->
   <div class="section">
     <h2>👤 Users</h2>
-    <table id="users-table">
-      <thead id="users-thead"></thead>
-      <tbody id="users-tbody"></tbody>
-    </table>
+    <div class="table-wrap">
+      <table id="users-table">
+        <thead id="users-thead"></thead>
+        <tbody id="users-tbody"></tbody>
+      </table>
+    </div>
 
     <!-- Add user row -->
     <div class="add-row">
@@ -536,12 +541,27 @@ _ADMIN_HTML = """<!DOCTYPE html>
     });
   }
 
+  const SLUG_LABELS = {
+    benchmark:          "Bench",
+    truage_activation:  "Activation",
+    truage_account:     "Acct Mgr",
+    truage_dictionary:  "Dictionary",
+    stock:              "Market",
+    app_downloads:      "Downloads",
+    cstore_intel:       "C-Store",
+    personal_email:     "Email Agent",
+  };
+
+  function slugLabel(slug) {
+    return SLUG_LABELS[slug] || slug;
+  }
+
   // ── Rendering ──────────────────────────────────────────────────────────────
   function renderTable() {
     // Header
     document.getElementById("users-thead").innerHTML = `<tr>
       <th>Email</th>
-      ${APP_SLUGS.map(s => `<th class="cb-cell">${s}</th>`).join("")}
+      ${APP_SLUGS.map(s => `<th class="cb-cell" title="${escHtml(s)}">${escHtml(slugLabel(s))}</th>`).join("")}
       <th></th>
     </tr>`;
 
