@@ -42,6 +42,10 @@ APP_REGISTRY = [
      "description": "US convenience store database — 150k+ locations, chain analytics, market density, and gap intelligence.",
      "icon": "🏪", "color": "#16a34a",
      "url": "https://scraping.up.railway.app", "external": True},
+    {"slug": "personal_email", "title": "Personal Email Agent",
+     "description": "Rules control panel and activity tracker for the personal Gmail monitor. Review classifications, tune interruption rules, and track open loops.",
+     "icon": "🛎️", "color": "#c2410c",
+     "url": "https://personal-email-monitor.up.railway.app", "external": True},
 ]
 
 # "admin" role maps to the admin card above; only users with this slug see it.
@@ -143,6 +147,7 @@ USER_ROLES: dict[str, list[str]] = {
         "truage_account",
         "truage_dictionary",
         "stock",
+        "personal_email",
     ],
 }
 
