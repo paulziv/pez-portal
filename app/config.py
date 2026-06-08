@@ -45,7 +45,7 @@ APP_REGISTRY = [
     {"slug": "personal_email", "title": "Personal Email Agent",
      "description": "Rules control panel and activity tracker for the personal Gmail monitor. Review classifications, tune interruption rules, and track open loops.",
      "icon": "🛎️", "color": "#c2410c",
-     "url": "https://personal-email-monitor.up.railway.app", "external": True},
+     "url": "https://email-monitor.up.railway.app/", "external": True},
 ]
 
 # "admin" role maps to the admin card above; only users with this slug see it.
