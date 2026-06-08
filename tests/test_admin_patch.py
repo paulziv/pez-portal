@@ -3,12 +3,27 @@
 import ast
 import pytest
 
-from app.routers.admin.routes import _build_user_roles_block, _patch_config_py
+from app.routers.admin.routes import (
+    _build_app_registry_block,
+    _build_user_roles_block,
+    _patch_config_py,
+)
 
 _MINIMAL_CONFIG = '''\
 """Portal configuration."""
 
-APP_REGISTRY = []
+APP_REGISTRY = [
+    {
+        "slug": "benchmark",
+        "title": "BenchPoint",
+        "description": "Benchmark app.",
+        "icon": "📊",
+        "color": "#005eb8",
+        "order": 20,
+        "url": "https://example.com",
+        "external": True,
+    },
+]
 
 USER_ROLES: dict[str, list[str]] = {
     "alice@example.com": [
@@ -26,7 +41,7 @@ def test_roundtrip_preserves_structure():
     users = {"alice@example.com": ["benchmark"]}
     patched = _patch_config_py(_MINIMAL_CONFIG, users)
     ast.parse(patched)
-    assert 'APP_REGISTRY = []' in patched
+    assert 'APP_REGISTRY = [' in patched
     assert 'class Settings' in patched
 
 
@@ -78,3 +93,41 @@ def test_build_user_roles_block_structure():
     ast.parse(block.replace("USER_ROLES: dict[str, list[str]] = ", "roles = "))
     assert '"x"' in block
     assert '"y"' in block
+
+
+def test_build_app_registry_block_structure():
+    block = _build_app_registry_block([
+        {
+            "slug": "benchmark",
+            "title": "BenchPoint",
+            "description": "Benchmark app.",
+            "icon": "📊",
+            "color": "#005eb8",
+            "order": 20,
+            "url": "https://example.com",
+            "external": True,
+        }
+    ])
+    ast.parse(block.replace("APP_REGISTRY = ", "apps = "))
+    assert '"order": 20' in block
+    assert '"color": ' in block
+
+
+def test_patch_config_can_update_app_registry():
+    users = {"alice@example.com": ["benchmark"]}
+    apps = [
+        {
+            "slug": "benchmark",
+            "title": "BenchPoint",
+            "description": "Benchmark app.",
+            "icon": "📊",
+            "color": "#123456",
+            "order": 5,
+            "url": "https://example.com",
+            "external": True,
+        }
+    ]
+    patched = _patch_config_py(_MINIMAL_CONFIG, users, new_apps=apps)
+    ast.parse(patched)
+    assert '"color": \'#123456\'' in patched
+    assert '"order": 5' in patched

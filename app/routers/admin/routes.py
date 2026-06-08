@@ -37,6 +37,7 @@ _RAILWAY_GQL = "https://backboard.railway.com/graphql/v2"
 class DeployPayload(BaseModel):
     users: dict[str, list[str]]
     email_subscriptions: dict[str, list[str]] = {}
+    apps: list[dict[str, Any]] | None = None
 
 
 class SchedulePayload(BaseModel):
@@ -65,14 +66,61 @@ def _build_user_roles_block(users: dict[str, list[str]]) -> str:
     return _build_dict_block("USER_ROLES", users)
 
 
+def _format_py_value(value: Any) -> str:
+    if isinstance(value, bool):
+        return "True" if value else "False"
+    if isinstance(value, int):
+        return str(value)
+    if isinstance(value, str):
+        return repr(value)
+    raise TypeError(f"Unsupported APP_REGISTRY value type: {type(value).__name__}")
+
+
+def _build_app_registry_block(apps: list[dict[str, Any]]) -> str:
+    """Render APP_REGISTRY as a Python literal block."""
+    key_order = [
+        "slug",
+        "title",
+        "description",
+        "icon",
+        "color",
+        "order",
+        "url",
+        "external",
+        "has_daily",
+    ]
+    lines = ["APP_REGISTRY = ["]
+    for app in apps:
+        lines.append("    {")
+        for key in key_order:
+            if key in app:
+                lines.append(f'        "{key}": {_format_py_value(app[key])},')
+        lines.append("    },")
+    lines.append("]")
+    return "\n".join(lines)
+
+
 def _patch_config_py(source: str, new_users: dict[str, list[str]],
-                     new_subs: dict[str, list[str]] | None = None) -> str:
-    """Replace USER_ROLES (and optionally EMAIL_SUBSCRIPTIONS) in config.py."""
+                     new_subs: dict[str, list[str]] | None = None,
+                     new_apps: list[dict[str, Any]] | None = None) -> str:
+    """Replace APP_REGISTRY, USER_ROLES, and EMAIL_SUBSCRIPTIONS in config.py."""
+    patched = source
+    if new_apps is not None:
+        apps_block = _build_app_registry_block(new_apps)
+        patched, apps_n = re.subn(
+            r'APP_REGISTRY = \[.*?\](?=\n\n(?:#|[A-Z_]+|class\s))',
+            lambda _: apps_block,
+            patched,
+            flags=re.DOTALL,
+        )
+        if apps_n != 1:
+            raise ValueError(f"Expected to replace 1 APP_REGISTRY block, found {apps_n}")
+
     new_block = _build_user_roles_block(new_users)
     patched, n = re.subn(
         r'USER_ROLES: dict\[str, list\[str\]\] = \{.*?\}',
         lambda _: new_block,
-        source,
+        patched,
         flags=re.DOTALL,
     )
     if n != 1:
@@ -90,11 +138,53 @@ def _patch_config_py(source: str, new_users: dict[str, list[str]],
     return patched
 
 
+def _normalize_apps(apps: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Validate admin-editable card settings while preserving app identity."""
+    existing_by_slug = {app["slug"]: app for app in _cfg.APP_REGISTRY}
+    incoming_by_slug = {str(app.get("slug", "")): app for app in apps}
+
+    if set(incoming_by_slug) != set(existing_by_slug):
+        raise HTTPException(
+            status_code=422,
+            detail="Card settings must include exactly the existing app slugs.",
+        )
+
+    normalized: list[dict[str, Any]] = []
+    for slug, existing in existing_by_slug.items():
+        incoming = incoming_by_slug[slug]
+        color = str(incoming.get("color", existing.get("color", "#00203F"))).strip()
+        if not re.fullmatch(r"#[0-9a-fA-F]{6}", color):
+            raise HTTPException(
+                status_code=422,
+                detail=f"Invalid color for {slug!r}: use #RRGGBB.",
+            )
+        try:
+            order = int(incoming.get("order", existing.get("order", 999)))
+        except (TypeError, ValueError) as exc:
+            raise HTTPException(
+                status_code=422,
+                detail=f"Invalid order for {slug!r}: use a whole number.",
+            ) from exc
+        if order < 0 or order > 9999:
+            raise HTTPException(
+                status_code=422,
+                detail=f"Invalid order for {slug!r}: use 0 through 9999.",
+            )
+
+        app = dict(existing)
+        app["order"] = order
+        app["color"] = color
+        normalized.append(app)
+
+    return sorted(normalized, key=lambda app: (app.get("order", 999), app["title"]))
+
+
 # ── GitHub commit ─────────────────────────────────────────────────────────────
 
 async def _github_commit(new_users: dict[str, list[str]],
-                         new_subs: dict[str, list[str]] | None = None) -> str:
-    """Fetch config.py from GitHub, patch USER_ROLES + EMAIL_SUBSCRIPTIONS, commit back.
+                         new_subs: dict[str, list[str]] | None = None,
+                         new_apps: list[dict[str, Any]] | None = None) -> str:
+    """Fetch config.py from GitHub, patch config sections, commit back.
 
     Returns the short commit SHA on success.
     Raises HTTPException on any failure.
@@ -129,7 +219,7 @@ async def _github_commit(new_users: dict[str, list[str]],
 
         # ── Patch ─────────────────────────────────────────────────────────
         try:
-            new_source = _patch_config_py(current_source, new_users, new_subs)
+            new_source = _patch_config_py(current_source, new_users, new_subs, new_apps)
         except ValueError as exc:
             raise HTTPException(status_code=500, detail=str(exc)) from exc
 
@@ -143,7 +233,12 @@ async def _github_commit(new_users: dict[str, list[str]],
             ) from exc
 
         # ── Commit ────────────────────────────────────────────────────────
-        msg = "admin: update USER_ROLES" + (" + EMAIL_SUBSCRIPTIONS" if new_subs is not None else "") + " via pez-portal admin panel"
+        sections = ["USER_ROLES"]
+        if new_subs is not None:
+            sections.append("EMAIL_SUBSCRIPTIONS")
+        if new_apps is not None:
+            sections.append("APP_REGISTRY")
+        msg = f"admin: update {' + '.join(sections)} via pez-portal admin panel"
         r = await client.put(url, headers=headers, json={
             "message": msg,
             "content": base64.b64encode(new_source.encode()).decode(),
@@ -187,9 +282,10 @@ async def deploy(
     """Commit updated USER_ROLES + EMAIL_SUBSCRIPTIONS to GitHub."""
     new_users = {k.strip().lower(): v for k, v in payload.users.items()}
     new_subs  = {k.strip().lower(): v for k, v in payload.email_subscriptions.items()}
+    new_apps = _normalize_apps(payload.apps) if payload.apps is not None else None
 
     # Validate slugs
-    valid_slugs = {a["slug"] for a in _cfg.APP_REGISTRY} | {"admin"}
+    valid_slugs = {a["slug"] for a in (new_apps or _cfg.APP_REGISTRY)} | {"admin"}
     for email, slugs in new_users.items():
         bad = set(slugs) - valid_slugs
         if bad:
@@ -199,13 +295,16 @@ async def deploy(
             )
 
     # Commit to GitHub
-    commit_sha = await _github_commit(new_users, new_subs)
+    commit_sha = await _github_commit(new_users, new_subs, new_apps)
 
     # Update in-memory immediately
     _cfg.USER_ROLES.clear()
     _cfg.USER_ROLES.update(new_users)
     _cfg.EMAIL_SUBSCRIPTIONS.clear()
     _cfg.EMAIL_SUBSCRIPTIONS.update(new_subs)
+    if new_apps is not None:
+        _cfg.APP_REGISTRY.clear()
+        _cfg.APP_REGISTRY.extend(new_apps)
 
     settings = get_settings()
     return {
@@ -331,10 +430,14 @@ _ADMIN_HTML = """<!DOCTYPE html>
              font-size:1rem;padding:0 4px;line-height:1;}
     .btn-del:hover{color:var(--err);}
     .add-row{display:flex;gap:0.6rem;margin-top:1rem;flex-wrap:wrap;align-items:center;}
-    input[type=text]{background:var(--panel2);color:var(--text);
+    input[type=text],input[type=number]{background:var(--panel2);color:var(--text);
                      border:1px solid var(--border);border-radius:6px;
                      padding:0.42rem 0.75rem;font-size:0.84rem;width:260px;}
-    input[type=text]:focus{outline:none;border-color:var(--accent);}
+    input[type=number]{width:76px;text-align:right;}
+    input[type=color]{width:38px;height:32px;background:var(--panel2);
+                      border:1px solid var(--border);border-radius:6px;
+                      padding:3px;cursor:pointer;}
+    input[type=text]:focus,input[type=number]:focus{outline:none;border-color:var(--accent);}
     .btn{background:var(--accent);color:#0f172a;font-weight:600;
          border:none;border-radius:6px;padding:0.45rem 1rem;
          font-size:0.84rem;cursor:pointer;}
@@ -357,6 +460,13 @@ _ADMIN_HTML = """<!DOCTYPE html>
     .apps-list{display:flex;flex-wrap:wrap;gap:0.5rem;}
     .app-chip{background:var(--panel2);border:1px solid var(--border);
               border-radius:4px;padding:0.2rem 0.6rem;font-size:0.78rem;color:var(--muted);}
+    .card-admin-table{min-width:720px;}
+    .card-admin-table th{text-align:left;}
+    .card-admin-table td{height:46px;}
+    .card-preview{display:flex;align-items:center;gap:0.45rem;font-weight:600;}
+    .card-color-swatch{display:inline-block;width:14px;height:14px;border-radius:999px;
+                       border:1px solid rgba(255,255,255,0.35);vertical-align:middle;}
+    .slug-muted{font-size:0.76rem;color:var(--muted);font-family:ui-monospace,Menlo,monospace;}
     .dist-report{margin-bottom:1.1rem;}
     .dist-report-title{font-size:0.88rem;font-weight:600;color:var(--text);margin-bottom:0.55rem;
                        display:flex;align-items:center;gap:0.4rem;}
@@ -422,12 +532,25 @@ _ADMIN_HTML = """<!DOCTYPE html>
     </div>
   </div>
 
-  <!-- Apps section (read-only) -->
+  <!-- Card Layout -->
   <div class="section">
-    <h2>📦 Registered Apps</h2>
-    <div class="apps-list" id="apps-list"></div>
+    <h2>🧩 Card Layout</h2>
+    <div class="table-wrap">
+      <table class="card-admin-table">
+        <thead>
+          <tr>
+            <th>Order</th>
+            <th>Card</th>
+            <th>Color</th>
+            <th>Slug</th>
+          </tr>
+        </thead>
+        <tbody id="cards-tbody"></tbody>
+      </table>
+    </div>
     <p style="font-size:0.78rem;color:var(--muted);margin-top:0.75rem;">
-      Adding new apps requires a code change (new router + config.py entry + redeploy).
+      Lower numbers appear first. This edits card order and accent color only.
+      Adding new apps still requires a code change.
     </p>
   </div>
 
@@ -488,6 +611,7 @@ _ADMIN_HTML = """<!DOCTYPE html>
   let _config  = { users: {}, apps: [], email_subscriptions: {} };
   let _pending = {};       // users working copy
   let _pendingSubs = {};   // email_subscriptions working copy
+  let _pendingApps = [];    // APP_REGISTRY card layout working copy
   let _dirty   = false;
 
   const APP_SLUGS = [];  // filled after config load (excludes "admin")
@@ -503,14 +627,12 @@ _ADMIN_HTML = """<!DOCTYPE html>
     _config = await resp.json();
     _pending = deepClone(_config.users);
     _pendingSubs = deepClone(_config.email_subscriptions || {});
+    _pendingApps = sortApps(deepClone(_config.apps || []));
 
     // Collect app slugs (exclude "admin" — it's a meta-role)
-    APP_SLUGS.length = 0;
-    (_config.apps || []).forEach(a => {
-      if (a.slug !== "admin") APP_SLUGS.push(a.slug);
-    });
+    refreshAppSlugs();
 
-    renderApps();
+    renderCards();
     renderTable();
     renderDistribution();
     loadSchedule(token);
@@ -557,6 +679,13 @@ _ADMIN_HTML = """<!DOCTYPE html>
   }
 
   // ── Rendering ──────────────────────────────────────────────────────────────
+  function refreshAppSlugs() {
+    APP_SLUGS.length = 0;
+    sortApps(_pendingApps).forEach(a => {
+      if (a.slug !== "admin") APP_SLUGS.push(a.slug);
+    });
+  }
+
   function renderTable() {
     // Header
     document.getElementById("users-thead").innerHTML = `<tr>
@@ -580,15 +709,32 @@ _ADMIN_HTML = """<!DOCTYPE html>
       </tr>`).join("") || `<tr><td colspan="${APP_SLUGS.length + 2}" style="color:var(--muted);padding:1rem 0.6rem;">No users yet.</td></tr>`;
   }
 
-  function renderApps() {
-    document.getElementById("apps-list").innerHTML =
-      (_config.apps || []).filter(a => a.slug !== "admin").map(a =>
-        `<div class="app-chip">${escHtml(a.icon || "")} ${escHtml(a.title)}</div>`
-      ).join("");
+  function renderCards() {
+    document.getElementById("cards-tbody").innerHTML =
+      sortApps(_pendingApps).map(app => `
+        <tr>
+          <td>
+            <input type="number" min="0" max="9999" value="${Number(app.order ?? 999)}"
+              onchange="updateCard('${escAttr(app.slug)}','order',this.value)"/>
+          </td>
+          <td>
+            <div class="card-preview">
+              <span>${escHtml(app.icon || "📦")}</span>
+              <span>${escHtml(app.title)}</span>
+            </div>
+          </td>
+          <td>
+            <input type="color" value="${escAttr(app.color || "#00203F")}"
+              onchange="updateCard('${escAttr(app.slug)}','color',this.value)"/>
+            <span class="card-color-swatch" style="background:${escAttr(app.color || "#00203F")}"></span>
+          </td>
+          <td><span class="slug-muted">${escHtml(app.slug)}</span></td>
+        </tr>
+      `).join("");
   }
 
   function renderDistribution() {
-    const shippable = (_config.apps || []).filter(a => a.has_daily);
+    const shippable = sortApps(_pendingApps).filter(a => a.has_daily);
     if (!shippable.length) {
       document.getElementById("dist-container").innerHTML =
         '<p style="font-size:0.82rem;color:var(--muted);">No shippable reports configured.</p>';
@@ -735,7 +881,39 @@ _ADMIN_HTML = """<!DOCTYPE html>
   function discardChanges() {
     _pending = deepClone(_config.users);
     _pendingSubs = deepClone(_config.email_subscriptions || {});
+    _pendingApps = sortApps(deepClone(_config.apps || []));
+    refreshAppSlugs();
     markClean();
+    renderCards();
+    renderTable();
+    renderDistribution();
+  }
+
+  // ── Card layout edits ────────────────────────────────────────────────────
+  function updateCard(slug, field, value) {
+    const app = _pendingApps.find(a => a.slug === slug);
+    if (!app) return;
+    if (field === "order") {
+      const order = parseInt(value, 10);
+      if (Number.isNaN(order) || order < 0 || order > 9999) {
+        showStatus("Order must be a number from 0 to 9999.", false);
+        renderCards();
+        return;
+      }
+      app.order = order;
+    }
+    if (field === "color") {
+      if (!/^#[0-9a-fA-F]{6}$/.test(value)) {
+        showStatus("Color must be a #RRGGBB value.", false);
+        renderCards();
+        return;
+      }
+      app.color = value;
+    }
+    _pendingApps = sortApps(_pendingApps);
+    refreshAppSlugs();
+    markDirty();
+    renderCards();
     renderTable();
     renderDistribution();
   }
@@ -774,7 +952,11 @@ _ADMIN_HTML = """<!DOCTYPE html>
     try {
       const resp = await apiFetch("/apps/admin/api/deploy", token, {
         method: "POST",
-        body: JSON.stringify({ users: payload, email_subscriptions: deepClone(_pendingSubs) }),
+        body: JSON.stringify({
+          users: payload,
+          email_subscriptions: deepClone(_pendingSubs),
+          apps: deepClone(_pendingApps),
+        }),
       });
       const data = await resp.json();
       if (!resp.ok) {
@@ -785,8 +967,14 @@ _ADMIN_HTML = """<!DOCTYPE html>
           `✓ Committed <a href="${escHtml(data.commit_url)}" target="_blank" rel="noopener" style="color:var(--ok)">${data.commit_sha}</a> — ${escHtml(data.message)}`,
           true
         );
-        _config = { ..._config, users: deepClone(payload), email_subscriptions: deepClone(_pendingSubs) };
+        _config = {
+          ..._config,
+          users: deepClone(payload),
+          email_subscriptions: deepClone(_pendingSubs),
+          apps: deepClone(_pendingApps),
+        };
         markClean();
+        renderCards();
         renderTable();
         renderDistribution();
       }
@@ -807,6 +995,12 @@ _ADMIN_HTML = """<!DOCTYPE html>
   }
 
   function deepClone(obj) { return JSON.parse(JSON.stringify(obj)); }
+  function sortApps(apps) {
+    return [...apps].sort((a, b) =>
+      (Number(a.order ?? 999) - Number(b.order ?? 999)) ||
+      String(a.title || a.slug).localeCompare(String(b.title || b.slug))
+    );
+  }
 
   function escHtml(s) {
     return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;")

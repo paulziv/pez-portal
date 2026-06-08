@@ -220,7 +220,10 @@ h2{color:#1A2332;margin:0 0 0.75rem;}p{color:#7A7060;font-size:0.9rem;line-heigh
         allowed_slugs = roles.get(email, [])
         if not allowed_slugs:
             return JSONResponse(status_code=403, content={"detail": "Access denied"})
-        visible_apps = [a for a in APP_REGISTRY if a["slug"] in allowed_slugs]
+        visible_apps = sorted(
+            [a for a in APP_REGISTRY if a["slug"] in allowed_slugs],
+            key=lambda app: (app.get("order", 999), app["title"]),
+        )
         return JSONResponse({
             "email": email,
             "name": payload.get("name", email),

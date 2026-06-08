@@ -7,7 +7,7 @@ META_SLUGS = set()  # all slugs are now in APP_REGISTRY
 
 
 def test_app_registry_has_required_keys():
-    required = {"slug", "title", "description", "icon", "color", "url", "external"}
+    required = {"slug", "title", "description", "icon", "color", "order", "url", "external"}
     for app in APP_REGISTRY:
         missing = required - app.keys()
         assert not missing, f"App {app.get('slug')!r} is missing keys: {missing}"
@@ -16,6 +16,15 @@ def test_app_registry_has_required_keys():
 def test_app_registry_slugs_unique():
     slugs = [app["slug"] for app in APP_REGISTRY]
     assert len(slugs) == len(set(slugs)), "Duplicate slugs in APP_REGISTRY"
+
+
+def test_app_registry_orders_are_valid():
+    orders = []
+    for app in APP_REGISTRY:
+        assert isinstance(app["order"], int)
+        assert 0 <= app["order"] <= 9999
+        orders.append(app["order"])
+    assert orders == sorted(orders), "APP_REGISTRY should be stored in display order"
 
 
 def test_user_roles_slugs_exist_in_registry():
@@ -43,6 +52,6 @@ def test_frank_has_benchmark():
 def test_settings_defaults():
     settings = get_settings()
     assert settings.auth0_domain == "pezdev.us.auth0.com"
-    assert settings.app_version == "1.1.0"
+    assert settings.app_version == "1.3.0"
     assert settings.log_level == "INFO"
     assert settings.github_repo == "paulziv/pez-portal"
