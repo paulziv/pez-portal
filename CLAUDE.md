@@ -110,9 +110,12 @@ Then push to GitHub main.
 
 ## Adding a new app
 
+> **See `ADD_CARD_README.md` in the repo root for the full step-by-step guide**,
+> including field reference, color conventions, git workflow, and conflict resolution.
+
 1. Add entry to `APP_REGISTRY` in `app/config.py`
 2. Add `slug` to relevant users in `USER_ROLES`
-3. Create `app/routers/<slug>/routes.py` with router
+3. Create `app/routers/<slug>/routes.py` with router (external apps skip steps 3–5)
 4. Register router in `app/main.py`
 5. Add a test to `tests/test_routes.py`
 
