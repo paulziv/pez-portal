@@ -130,6 +130,7 @@ USER_ROLES: dict[str, list[str]] = {
         "truage_dictionary",
         "stock",
         "app_downloads",
+        "personal_email",
     ],
     "ssikorski@convenience.org": [
         "truage_activation",
