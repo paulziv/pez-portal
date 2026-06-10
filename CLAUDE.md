@@ -1,6 +1,8 @@
-# Innovation Portal (pez-portal) — v1.3.0
+# Innovation Portal (pez-portal) — v1.4.0
 
 Auth0-gated internal app portal for NACS / TruAge tools. Deployed on Railway.
+Production custom domain: `https://dashboard.mytruage.org` (also reachable at
+`nacsportal.up.railway.app`, but users should use the custom domain — see SSO below).
 
 ## Architecture
 
@@ -8,6 +10,13 @@ Auth0-gated internal app portal for NACS / TruAge tools. Deployed on Railway.
 - **Auth pattern**: Auth0 RS256 JWT. HTML shell routes return 200 freely — auth is
   handled client-side via Auth0 SPA SDK. All `/api/*` sub-routes are protected by
   `require_auth` / `require_app` FastAPI dependencies.
+- **SSO handoff to sub-apps (v1.4.0)**: after login, `portal.html` writes the Auth0
+  ID token to a `pez_id_token` cookie with `Domain=dashboard.mytruage.org` so
+  sub-apps on subdomains (e.g. BenchPoint at `benchpoint.dashboard.mytruage.org`)
+  pick up the session with zero additional prompts. The cookie is only set when the
+  portal is accessed via the custom domain (`*.up.railway.app` is a public suffix —
+  cookies cannot span it). Cleared on logout. Sub-app backends validate the JWT
+  signature/issuer themselves and keep their own access gates.
 - **Token pattern**: Always use `getIdTokenClaims().__raw` (the ID token JWT), NOT
   `getTokenSilently()`. Without an `audience`, Auth0 returns an opaque access token
   that python-jose cannot verify.
