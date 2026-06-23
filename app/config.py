@@ -83,6 +83,16 @@ APP_REGISTRY = [
         "external": True,
     },
     {
+        "slug": 'patent_atlas',
+        "title": 'Patent Atlas',
+        "description": 'Global patent portfolio and IP operations tracker — families, applications, deadlines, renewals, disclosures, and reports.',
+        "icon": '🗺️',
+        "color": '#4f46e5',
+        "order": 85,
+        "url": 'https://patent-atlas.up.railway.app',
+        "external": True,
+    },
+    {
         "slug": 'personal_email',
         "title": 'Personal Email Agent',
         "description": 'Rules control panel and activity tracker for the personal Gmail monitor. Review classifications, tune interruption rules, and track open loops.',
@@ -187,6 +197,7 @@ USER_ROLES: dict[str, list[str]] = {
         "stock",
         "app_downloads",
         "personal_email",
+        "patent_atlas",
     ],
     "ssikorski@convenience.org": [
         "truage_activation",
@@ -205,6 +216,7 @@ USER_ROLES: dict[str, list[str]] = {
         "truage_dictionary",
         "stock",
         "personal_email",
+        "patent_atlas",
     ],
 }
 
