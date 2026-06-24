@@ -89,7 +89,7 @@ APP_REGISTRY = [
         "icon": '🗺️',
         "color": '#4f46e5',
         "order": 85,
-        "url": 'https://patent-atlas.up.railway.app',
+        "url": 'https://patent-atlas.dashboard.mytruage.org',
         "external": True,
     },
     {
