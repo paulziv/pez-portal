@@ -60,13 +60,19 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 def create_app() -> FastAPI:
     settings = get_settings()
 
+    # Swagger UI and the raw schema list every route on the portal, including
+    # /apps/admin/api/deploy (commits to GitHub) and /apps/admin/api/schedule
+    # (edits the Railway cron). Only expose them in non-production environments.
+    _expose_docs = not settings.is_production
+
     app = FastAPI(
         title="Pez Portal",
         description="Internal app portal — role-based access to reporting tools.",
         version=settings.app_version,
         lifespan=lifespan,
-        docs_url="/docs",
+        docs_url="/docs" if _expose_docs else None,
         redoc_url=None,
+        openapi_url="/openapi.json" if _expose_docs else None,
     )
 
     app.add_middleware(

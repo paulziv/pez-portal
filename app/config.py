@@ -229,6 +229,20 @@ class Settings(BaseSettings):
     app_port: int = Field(8080)
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR"] = "INFO"
     app_version: str = "1.4.0"
+
+    # Railway auto-populates RAILWAY_ENVIRONMENT_NAME on every service (production/
+    # dev/demo/etc). Defaults to "production" when unset so docs/schema endpoints
+    # fail closed rather than fail open.
+    environment: str = Field(
+        "production",
+        validation_alias="RAILWAY_ENVIRONMENT_NAME",
+        description="Deployment environment name — controls whether /docs, /redoc, "
+        "and /openapi.json are exposed.",
+    )
+
+    @property
+    def is_production(self) -> bool:
+        return self.environment.lower() == "production"
     auth0_domain: str = Field("pezdev.us.auth0.com")
     auth0_client_id: str = Field("4X6INHXnVCqb4M1KqUTVK9vDBhzT0q5d")
     auth0_audience: str = Field("")
