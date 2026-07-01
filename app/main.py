@@ -25,6 +25,8 @@ from app.routers.truage_account.routes import router as truage_account_router, r
 from app.routers.stock.routes import router as stock_router
 from app.routers.app_downloads.routes import router as app_downloads_router, run_daily as run_downloads_daily, run_backfill as run_downloads_backfill
 
+log = logging.getLogger(__name__)
+
 _STATIC_DIR = Path(__file__).parent / "static"
 
 
@@ -98,12 +100,32 @@ def create_app() -> FastAPI:
         auth_header = request.headers.get("Authorization", "")
         if token != settings.cron_secret and auth_header != f"Bearer {settings.cron_secret}":
             return JSONResponse({"error": "Unauthorized"}, status_code=401)
+        # Log every authorized hit — this is the key signal for catching duplicate
+        # triggers (cron retries, a leftover duplicate Railway cron service, a
+        # manual curl on top of the scheduled one, etc). If you ever see two of
+        # these log lines on the same UTC day, that confirms the trigger itself
+        # is duplicating (the idempotency guard in daily_cache.try_claim_send
+        # means a second trigger is now harmless, but this tells you it happened).
+        log.info(
+            "cron/run-daily HIT: client=%s user_agent=%r via=%s",
+            request.client.host if request.client else "unknown",
+            request.headers.get("User-Agent", ""),
+            "query_token" if token == settings.cron_secret else "auth_header",
+        )
         # Fire background tasks — each triggers upstream refresh then waits ~75s
         # before caching. Return immediately so the cron caller doesn't time out.
         purge_expired()
-        asyncio.create_task(run_account_daily())
-        asyncio.create_task(run_activation_daily())
-        asyncio.create_task(run_downloads_daily())
+
+        async def _run_logged(coro, label: str) -> None:
+            try:
+                result = await coro
+                log.info("cron/run-daily %s finished: %s", label, result)
+            except Exception:
+                log.exception("cron/run-daily %s raised an exception", label)
+
+        asyncio.create_task(_run_logged(run_account_daily(), "run_account_daily"))
+        asyncio.create_task(_run_logged(run_activation_daily(), "run_activation_daily"))
+        asyncio.create_task(_run_logged(run_downloads_daily(), "run_downloads_daily"))
         return JSONResponse({"status": "triggered"})
 
     @app.post("/api/cron/run-downloads", include_in_schema=False)

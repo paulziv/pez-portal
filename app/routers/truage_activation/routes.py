@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import re
 
 import httpx
@@ -11,6 +12,8 @@ from fastapi.responses import HTMLResponse, JSONResponse
 from app.auth import UserClaims, require_app
 from app.daily_cache import activation_cache
 from app.email_service import send_report
+
+log = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/apps/truage-activation", tags=["truage-activation"])
 _require = require_app("truage_activation")
@@ -591,6 +594,7 @@ async def status(user: UserClaims = Depends(_require)) -> dict:
 
 async def run_daily() -> str:
     """Trigger upstream refresh then poll until a full report is ready, then cache it."""
+    log.info("truage_activation.run_daily: starting")
     try:
         async with httpx.AsyncClient(timeout=15) as client:
             await client.post(f"{_UPSTREAM}/refresh")
@@ -605,20 +609,33 @@ async def run_daily() -> str:
                 resp = await client.get(f"{_UPSTREAM}/")
             if resp.status_code == 200 and len(resp.text) > 10_000:
                 activation_cache.set(_inject_base(resp.text))
+                log.info("truage_activation.run_daily: report cached on attempt %d", attempt + 1)
                 _send_subscribed_emails("truage_activation", "TruAge Activation Report")
                 return f"ok (attempt {attempt + 1})"
         except Exception:
             pass
+    log.warning("truage_activation.run_daily: upstream report not ready after retries")
     return "error: upstream report not ready after retries"
 
 
 def _send_subscribed_emails(slug: str, title: str) -> None:
-    """Fire-and-forget: email all subscribed users for this report."""
+    """Fire-and-forget: email all subscribed users for this report.
+
+    Guarded by daily_cache.try_claim_send() so that if /api/cron/run-daily
+    is ever triggered twice in the same UTC day (cron retry, leftover
+    duplicate Railway cron service, etc.), only the first call actually
+    sends — the second is a no-op.
+    """
     import app.config as _cfg
     from app.report_tokens import mint_token
+    from app.daily_cache import try_claim_send
     subscribers = [e for e, slugs in _cfg.EMAIL_SUBSCRIPTIONS.items() if slug in slugs]
     if not subscribers or not activation_cache.available:
         return
+    if not try_claim_send(slug):
+        log.info("%s: skipping send — already sent today (duplicate trigger?)", slug)
+        return
+    log.info("%s: sending to %d subscriber(s)", slug, len(subscribers))
     for email in subscribers:
         token = mint_token(slug)
         report_url = f"https://nacsportal.up.railway.app/report/{token}" if token else "https://nacsportal.up.railway.app"

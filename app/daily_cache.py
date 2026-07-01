@@ -83,6 +83,73 @@ def _db_save(slug: str, html: str, generated_at: datetime) -> None:
         conn.close()
 
 
+def _ensure_email_log_table() -> None:
+    conn = _get_conn()
+    if not conn:
+        return
+    try:
+        with conn:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    CREATE TABLE IF NOT EXISTS report_email_log (
+                        slug         TEXT NOT NULL,
+                        sent_date    DATE NOT NULL,
+                        PRIMARY KEY (slug, sent_date)
+                    )
+                """)
+    except Exception as exc:
+        log.warning("report_email_log: could not create table: %s", exc)
+    finally:
+        conn.close()
+
+
+# Best-effort fallback only used when PORTAL_DATABASE_URL isn't set. Does not
+# protect against duplicate sends across separate processes/replicas — the DB
+# path below is the real guard.
+_in_memory_email_log: set[tuple[str, str]] = set()
+
+
+def try_claim_send(slug: str) -> bool:
+    """Atomically claim today's (UTC) email-send slot for this report.
+
+    Returns True if this call is the one that should proceed to send,
+    False if another call already claimed today's slot for this slug.
+
+    Backed by a unique (slug, sent_date) DB constraint via
+    INSERT ... ON CONFLICT DO NOTHING, so it's safe even if two background
+    tasks race each other (e.g. /api/cron/run-daily gets triggered twice —
+    a Railway cron retry, a leftover duplicate cron service, etc.). Only
+    one of the racing calls will get rowcount == 1.
+    """
+    today = datetime.utcnow().date()
+    conn = _get_conn()
+    if not conn:
+        key = (slug, today.isoformat())
+        if key in _in_memory_email_log:
+            return False
+        _in_memory_email_log.add(key)
+        return True
+    try:
+        with conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    INSERT INTO report_email_log (slug, sent_date)
+                    VALUES (%s, %s)
+                    ON CONFLICT (slug, sent_date) DO NOTHING
+                    """,
+                    (slug, today),
+                )
+                return cur.rowcount == 1
+    except Exception as exc:
+        # If the guard itself breaks, don't let that silently swallow the
+        # day's report — send, but log loudly so it gets noticed/fixed.
+        log.warning("report_email_log: claim failed for %s: %s — sending anyway", slug, exc)
+        return True
+    finally:
+        conn.close()
+
+
 # ── Cache class ───────────────────────────────────────────────────────────────
 
 class DailyCache:
@@ -119,6 +186,7 @@ class DailyCache:
 # ── Startup ───────────────────────────────────────────────────────────────────
 
 _ensure_table()
+_ensure_email_log_table()
 
 account_cache    = DailyCache("truage_account")
 activation_cache = DailyCache("truage_activation")

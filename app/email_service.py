@@ -1,12 +1,15 @@
 """Resend-based email delivery for portal reports."""
 from __future__ import annotations
 
+import logging
 from datetime import datetime
 from typing import Optional
 
 import resend
 
 from app.config import get_settings
+
+log = logging.getLogger(__name__)
 
 _BASE_URL = "https://nacsportal.up.railway.app"
 
@@ -31,6 +34,7 @@ def send_report(
     Returns {"ok": True} or {"ok": False, "error": str}.
     """
     if not _client_ready():
+        log.warning("email send SKIPPED (RESEND_API_KEY not configured): report=%r to=%r", report_title, to)
         return {"ok": False, "error": "RESEND_API_KEY not configured"}
 
     settings = get_settings()
@@ -83,6 +87,8 @@ def send_report(
             "subject": subject,
             "html": body,
         })
+        log.info("email sent: report=%r to=%r subject=%r", report_title, to, subject)
         return {"ok": True}
     except Exception as exc:
+        log.warning("email send FAILED: report=%r to=%r error=%s", report_title, to, exc)
         return {"ok": False, "error": str(exc)}

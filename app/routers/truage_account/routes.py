@@ -1,6 +1,7 @@
 """TruAge Account Manager Report router — proxies nacstam and caches a daily snapshot."""
 from __future__ import annotations
 
+import logging
 import re
 
 import httpx
@@ -10,6 +11,8 @@ from fastapi.responses import HTMLResponse, JSONResponse
 from app.auth import UserClaims, require_app
 from app.daily_cache import account_cache
 from app.email_service import send_report
+
+log = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/apps/truage-account", tags=["truage-account"])
 _require = require_app("truage_account")
@@ -516,6 +519,7 @@ async def status(user: UserClaims = Depends(_require)) -> dict:
 async def run_daily() -> str:
     """Fetch /audit/report directly (blocking endpoint), cache when a full report arrives."""
     import asyncio
+    log.info("truage_account.run_daily: starting")
     try:
         async with httpx.AsyncClient(timeout=15, follow_redirects=True) as client:
             await client.post(f"{_UPSTREAM}/refresh")
@@ -528,23 +532,36 @@ async def run_daily() -> str:
                 resp = await client.get(f"{_UPSTREAM}/audit/report")
             if resp.status_code == 200 and len(resp.text) > 10_000:
                 account_cache.set(_inject_base(resp.text))
+                log.info("truage_account.run_daily: report cached on attempt %d", attempt + 1)
                 _send_subscribed_emails()
                 return f"ok (attempt {attempt + 1})"
         except Exception:
             pass
         if attempt < 2:
             await asyncio.sleep(10)
+    log.warning("truage_account.run_daily: upstream report not ready after 3 attempts")
     return "error: upstream report not ready after 3 attempts"
 
 
 def _send_subscribed_emails() -> None:
-    """Fire-and-forget: email all subscribed users for the account manager report."""
+    """Fire-and-forget: email all subscribed users for the account manager report.
+
+    Guarded by daily_cache.try_claim_send() so that if /api/cron/run-daily
+    is ever triggered twice in the same UTC day (cron retry, leftover
+    duplicate Railway cron service, etc.), only the first call actually
+    sends — the second is a no-op.
+    """
     import app.config as _cfg
     from app.report_tokens import mint_token
+    from app.daily_cache import try_claim_send
     slug = "truage_account"
     subscribers = [e for e, slugs in _cfg.EMAIL_SUBSCRIPTIONS.items() if slug in slugs]
     if not subscribers or not account_cache.available:
         return
+    if not try_claim_send(slug):
+        log.info("%s: skipping send — already sent today (duplicate trigger?)", slug)
+        return
+    log.info("%s: sending to %d subscriber(s)", slug, len(subscribers))
     for email in subscribers:
         token = mint_token(slug)
         report_url = f"https://nacsportal.up.railway.app/report/{token}" if token else "https://nacsportal.up.railway.app"
