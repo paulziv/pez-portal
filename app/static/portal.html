@@ -414,6 +414,14 @@
       const claims = await _auth0.getIdTokenClaims();
       if (!claims) { showState("state-login"); return; }
       _token = claims.__raw;
+      // Hand the session to sub-apps (e.g. BenchPoint) via a parent-domain cookie.
+      // Only possible on the custom domain — *.up.railway.app is a public-suffix
+      // domain and cannot host cookies shared across subdomains.
+      if (location.hostname.endsWith("dashboard.mytruage.org")) {
+        const ttl = claims.exp ? Math.max(60, claims.exp - Math.floor(Date.now() / 1000)) : 36000;
+        document.cookie = "pez_id_token=" + claims.__raw +
+          "; Domain=dashboard.mytruage.org; Path=/; Max-Age=" + ttl + "; Secure; SameSite=Lax";
+      }
     } catch (e) {
       showState("state-login");
       return;
@@ -514,6 +522,8 @@
   }
 
   async function logout() {
+    // Revoke the sub-app session cookie (BenchPoint et al.)
+    document.cookie = "pez_id_token=; Domain=dashboard.mytruage.org; Path=/; Max-Age=0; Secure; SameSite=Lax";
     await _auth0.logout({
       logoutParams: { returnTo: window.location.origin },
     });
