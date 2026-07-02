@@ -237,7 +237,7 @@ _SHELL = """<!DOCTYPE html>
   <div class="loader-card">
     <div class="loader-ring"></div>
     <div class="loader-msg" id="loader-msg">Connecting to HubSpot&hellip;</div>
-    <div class="loader-sub">Hang tight &mdash; this usually takes 30&ndash;45 seconds</div>
+    <div class="loader-sub" id="loader-sub">Hang tight &mdash; this usually takes 30&ndash;45 seconds</div>
     <div class="steps">
       <div class="step pending" id="step-1">
         <span class="step-icon">&#x25CB;</span>
@@ -291,7 +291,15 @@ _SHELL = """<!DOCTYPE html>
     const msgEl = document.getElementById('loader-msg');
     const subEl = document.getElementById('loader-sub');
     function cycle() {{
-      if (!msgEl) return;
+      // Guard BOTH elements, not just msgEl. This exact asymmetry — one
+      // missing id="loader-sub" on the markup — previously let an uncaught
+      // TypeError here abort the whole synchronous startup script before
+      // it ever reached the code that loads the Auth0 SDK and calls
+      // loadReport(). The visible symptom was the loading spinner running
+      // forever with no network activity at all: nothing downstream of
+      // this line ever got a chance to execute. A missing element should
+      // degrade this cosmetic message rotation, not silently break page load.
+      if (!msgEl || !subEl) return;
       const [h, s] = LOAD_MSGS[i % LOAD_MSGS.length];
       msgEl.textContent = h;
       subEl.textContent = s;
@@ -496,9 +504,18 @@ _SHELL = """<!DOCTYPE html>
     }}
   }}
 
-  // Start message rotation and step progression immediately
-  startLoadingMessages(0);
-  _startSteps();
+  // Start message rotation and step progression immediately. Wrapped in
+  // try/catch deliberately: these are purely cosmetic (the rotating status
+  // text and step checklist), and an uncaught exception here must never be
+  // able to block the code below that actually loads the Auth0 SDK and the
+  // report — that's exactly what happened when a missing id="loader-sub"
+  // let an exception here silently kill page load entirely.
+  try {{
+    startLoadingMessages(0);
+    _startSteps();
+  }} catch (e) {{
+    console.error('Cosmetic loading-UI init failed (non-fatal):', e);
+  }}
 
   // Bootstrap Auth0 SDK — then check cooldown before firing loadReport
   const sdk = document.createElement('script');
