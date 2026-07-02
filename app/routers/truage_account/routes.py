@@ -106,7 +106,7 @@ _SHELL = """<!DOCTYPE html>
   <div class="loader-card">
     <div class="loader-ring"></div>
     <div class="loader-msg" id="loader-msg">Connecting to HubSpot&hellip;</div>
-    <div class="loader-sub">Hang tight &mdash; this usually takes 30&ndash;45 seconds</div>
+    <div class="loader-sub" id="loader-sub">Hang tight &mdash; this usually takes 30&ndash;45 seconds</div>
     <div class="steps">
       <div class="step pending" id="step-1"><span class="step-icon">&#x25CB;</span><span>Authenticating with HubSpot API</span></div>
       <div class="step pending" id="step-2"><span class="step-icon">&#x25CB;</span><span>Fetching account manager records</span></div>
@@ -141,7 +141,13 @@ _SHELL = """<!DOCTYPE html>
     const msgEl = document.getElementById('loader-msg');
     const subEl = document.getElementById('loader-sub');
     function cycle() {{
-      if (!msgEl) return;
+      // Same fix as truage_activation's shell: guard BOTH elements, not
+      // just msgEl. A missing id="loader-sub" here let an uncaught
+      // TypeError abort the whole synchronous startup script before it
+      // ever reached the code that loads the Auth0 SDK and calls
+      // loadReport() — the visible symptom was the manual refresh button
+      // spinning forever with zero network activity.
+      if (!msgEl || !subEl) return;
       const [h, s] = LOAD_MSGS[i % LOAD_MSGS.length];
       msgEl.textContent = h; subEl.textContent = s; i++;
       _msgTimer = setTimeout(cycle, 3500);
@@ -299,7 +305,11 @@ _SHELL = """<!DOCTYPE html>
     }} catch(e) {{ btn.textContent = '↻ Refresh'; btn.disabled = false; }}
   }}
 
-  startLoadingMessages(0); _startSteps();
+  try {{
+    startLoadingMessages(0); _startSteps();
+  }} catch (e) {{
+    console.error('Cosmetic loading-UI init failed (non-fatal):', e);
+  }}
   const sdk = document.createElement('script');
   sdk.src = 'https://cdn.auth0.com/js/auth0-spa-js/2.0/auth0-spa-js.production.js';
   sdk.onload = () => {{ const rem = _cooldownSecs(); if (rem > 0) showCooldown(rem); else loadReport(); }};
@@ -483,12 +493,12 @@ async def proxy_report(user: UserClaims = Depends(_require)) -> HTMLResponse:
 
 @router.post("/refresh")
 async def refresh_report(user: UserClaims = Depends(_require)) -> JSONResponse:
-    try:
-        async with httpx.AsyncClient(timeout=10) as client:
-            resp = await client.post(f"{_UPSTREAM}/refresh")
-        return JSONResponse({"status": "triggered", "upstream": resp.status_code})
-    except Exception as exc:
-        return JSONResponse({"status": "error", "detail": str(exc)}, status_code=502)
+    # truage-pulse has no /refresh endpoint — /audit/report computes fresh
+    # on every call, so there's nothing to separately trigger. This used
+    # to forward a POST to that nonexistent upstream endpoint (always
+    # 404, silently ignored by the frontend either way). Now a true no-op;
+    # the frontend's subsequent loadReport() call gets fresh data regardless.
+    return JSONResponse({"status": "triggered"})
 
 
 @router.get("/api/status")
