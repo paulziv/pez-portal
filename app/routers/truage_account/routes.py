@@ -517,14 +517,18 @@ async def status(user: UserClaims = Depends(_require)) -> dict:
 
 
 async def run_daily() -> str:
-    """Fetch /audit/report directly (blocking endpoint), cache when a full report arrives."""
+    """Fetch /audit/report directly (blocking endpoint), cache when a full report arrives.
+
+    Unlike truage_activation's upstream, truage-pulse has no /refresh
+    endpoint — /audit/report computes and returns the full report
+    synchronously in one call (hence the 120s timeout below), so there's
+    nothing to separately trigger. A leftover `POST {_UPSTREAM}/refresh`
+    call used to sit here too, copied from truage_activation's pattern; it
+    always 404'd (harmlessly, since its result was discarded either way)
+    and only added confusing noise to the logs. Removed.
+    """
     import asyncio
     log.info("truage_account.run_daily: starting")
-    try:
-        async with httpx.AsyncClient(timeout=15, follow_redirects=True) as client:
-            await client.post(f"{_UPSTREAM}/refresh")
-    except Exception:
-        pass
     # /audit/report is a blocking endpoint — retry up to 5× with a 2-min timeout each.
     for attempt in range(5):
         try:
