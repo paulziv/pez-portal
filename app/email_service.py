@@ -1,25 +1,17 @@
-"""Resend-based email delivery for portal reports."""
+"""Report-ready email delivery via the shared truage_core.email helper (Resend)."""
 from __future__ import annotations
 
 import logging
 from datetime import datetime
 from typing import Optional
 
-import resend
+from truage_core import email as tcemail
 
 from app.config import get_settings
 
 log = logging.getLogger(__name__)
 
 _BASE_URL = "https://nacsportal.up.railway.app"
-
-
-def _client_ready() -> bool:
-    settings = get_settings()
-    if not settings.resend_api_key:
-        return False
-    resend.api_key = settings.resend_api_key
-    return True
 
 
 def send_report(
@@ -31,13 +23,9 @@ def send_report(
 ) -> dict:
     """Send a report-ready notification email with a magic-link view button.
 
-    Returns {"ok": True} or {"ok": False, "error": str}.
+    Sends from the unified reports@ address (see truage_core.email).
+    Returns {"ok": True, ...} or {"ok": False, "error": str}.
     """
-    if not _client_ready():
-        log.warning("email send SKIPPED (RESEND_API_KEY not configured): report=%r to=%r", report_title, to)
-        return {"ok": False, "error": "RESEND_API_KEY not configured"}
-
-    settings = get_settings()
     date_str = (generated_at or datetime.utcnow()).strftime("%B %d, %Y")
     subject = f"{report_title} — {date_str}"
 
@@ -80,15 +68,15 @@ def send_report(
 </div>
 """
 
-    try:
-        resend.Emails.send({
-            "from": settings.resend_from,
-            "to": [to] if isinstance(to, str) else to,
-            "subject": subject,
-            "html": body,
-        })
+    result = tcemail.send(
+        to=to,
+        subject=subject,
+        html=body,
+        purpose="reports",
+        api_key=get_settings().resend_api_key or None,
+    )
+    if result.get("ok"):
         log.info("email sent: report=%r to=%r subject=%r", report_title, to, subject)
-        return {"ok": True}
-    except Exception as exc:
-        log.warning("email send FAILED: report=%r to=%r error=%s", report_title, to, exc)
-        return {"ok": False, "error": str(exc)}
+    else:
+        log.warning("email send FAILED: report=%r to=%r error=%s", report_title, to, result.get("error"))
+    return result
