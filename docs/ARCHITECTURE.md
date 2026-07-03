@@ -125,3 +125,33 @@ Both `nacstar` (truage-activity-report) and `nacstam` (truage-pulse) depend on i
 pin in requirements; their Dockerfiles install `git` for the build. ~450 lines of duplication
 removed; both reports verified byte-identical. Next phases (logging/tracing, single cache,
 Resend unification) per `PORTAL_VNEXT_MIGRATION.md`.
+
+## ✅ Phase 2 shipped — logging/tracing + shared runlog + ops page
+All three services emit **structured JSON logs** via `truage_core.logging`, with a correlation
+id (`X-Request-ID`) minted per request and forwarded portal→backend. Run/error history moved
+out of the per-service `run_history` into a shared **`truage_core.runlog`** table, which resolves
+its DB as `RUNLOG_DATABASE_URL` → `DATABASE_URL` → SQLite. Because all three services share the
+same Railway Postgres (`DATABASE_URL`), the runlog is unified with no extra config. The portal
+exposes an admin-gated **`GET /api/ops`** returning recent `runs` and `errors` across services.
+
+## ✅ Phase 6 shipped — unified email on Resend
+All outbound mail goes through **`truage_core.email`** (single Resend sender). Postmark is
+retired. Per-purpose from-addresses on the verified `dashboard.mytruage.org` domain:
+reports from `reports@dashboard.mytruage.org`, alerts from `alerts@dashboard.mytruage.org`
+(overridable via `EMAIL_FROM_REPORTS` / `EMAIL_FROM_ALERTS`). `RESEND_API_KEY` is a shared
+Railway variable attached to portal, activation, and pulse.
+
+## ✅ Phase 5 shipped — single cache-of-truth (clarified)
+Investigation confirmed the intended design is already in place, so no risky refactor was done:
+
+- **Portal `report_cache` (Postgres, `PORTAL_DATABASE_URL`) is the SOURCE OF TRUTH.** The UI
+  serves from here; the daily cron populates it by pulling from the backends. See
+  `pez-portal/app/daily_cache.py`.
+- **Activation `/tmp/latest_report.html` is an ephemeral async buffer**, not a durable cache —
+  it holds the report between async generation and the portal's poll-GET, and resets on redeploy.
+- **Pulse `@cached(ttl=300)` on `build_audit()` is a per-replica perf cache** memoizing an
+  expensive HubSpot pull; ephemeral, not authoritative.
+
+The purist "fully stateless backends" refactor was rejected: making activation synchronous would
+risk HTTP timeouts on the slow HubSpot pull, and dropping pulse's memoization would add API load
+for no gain at single-replica scale. Code comments in each file mark the roles explicitly.

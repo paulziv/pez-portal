@@ -1,4 +1,10 @@
-"""Daily report cache — persisted to Postgres so redeploys don't wipe reports."""
+"""Daily report cache — the SOURCE OF TRUTH for rendered reports.
+
+Persisted to Postgres (PORTAL_DATABASE_URL) so redeploys don't wipe reports.
+This is the only durable cache in the ecosystem: the portal UI serves from here,
+and the daily cron populates it by pulling from the backend report services.
+The backends (activation, pulse) hold only ephemeral working state, never a
+competing durable cache. See ARCHITECTURE.md (Phase 5)."""
 from __future__ import annotations
 
 import logging
