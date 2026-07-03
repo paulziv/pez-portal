@@ -12,6 +12,7 @@ from fastapi.responses import HTMLResponse, JSONResponse
 from app.auth import UserClaims, require_app
 from app.daily_cache import activation_cache
 from app.email_service import send_report
+from truage_core import logging as tclog, runlog
 
 log = logging.getLogger(__name__)
 
@@ -541,7 +542,7 @@ async def proxy_report(user: UserClaims = Depends(_require)) -> HTMLResponse:
     """Server-side proxy — fetches the live report from the upstream service."""
     try:
         async with httpx.AsyncClient(timeout=90) as client:
-            resp = await client.get(f"{_UPSTREAM}/")
+            resp = await client.get(f"{_UPSTREAM}/", headers=tclog.outgoing_headers())
         if resp.status_code == 202:
             # Report not generated yet — upstream is still starting up
             return HTMLResponse(
@@ -563,7 +564,7 @@ async def refresh_report(user: UserClaims = Depends(_require)) -> JSONResponse:
     """Trigger a fresh HubSpot pull on the upstream service."""
     try:
         async with httpx.AsyncClient(timeout=10) as client:
-            resp = await client.post(f"{_UPSTREAM}/refresh")
+            resp = await client.post(f"{_UPSTREAM}/refresh", headers=tclog.outgoing_headers())
         return JSONResponse({"status": "triggered", "upstream": resp.status_code})
     except Exception as exc:
         return JSONResponse({"status": "error", "detail": str(exc)}, status_code=502)
@@ -614,7 +615,7 @@ async def run_daily() -> str:
     log.info("truage_activation.run_daily: starting")
     try:
         async with httpx.AsyncClient(timeout=15) as client:
-            await client.post(f"{_UPSTREAM}/refresh")
+            await client.post(f"{_UPSTREAM}/refresh", headers=tclog.outgoing_headers())
     except Exception:
         pass
     # Poll every 20s for up to ~10 minutes. Real reports are >10 KB;
@@ -623,15 +624,17 @@ async def run_daily() -> str:
         await asyncio.sleep(20)
         try:
             async with httpx.AsyncClient(timeout=30) as client:
-                resp = await client.get(f"{_UPSTREAM}/")
+                resp = await client.get(f"{_UPSTREAM}/", headers=tclog.outgoing_headers())
             if resp.status_code == 200 and len(resp.text) > 10_000:
                 activation_cache.set(_inject_base(resp.text))
                 log.info("truage_activation.run_daily: report cached on attempt %d", attempt + 1)
                 _send_subscribed_emails("truage_activation", "TruAge Activation Report")
+                runlog.record_run("portal", "truage_activation", "ok", correlation_id=tclog.current_request_id())
                 return f"ok (attempt {attempt + 1})"
         except Exception:
             pass
     log.warning("truage_activation.run_daily: upstream report not ready after retries")
+    runlog.record_run("portal", "truage_activation", "error", correlation_id=tclog.current_request_id(), step="upstream_not_ready")
     return "error: upstream report not ready after retries"
 
 

@@ -59,9 +59,10 @@ app/
   routers/
     admin/routes.py          # Admin panel — USER_ROLES, EMAIL_SUBSCRIPTIONS, report schedule
     truage_activation/routes.py   # TruAge Activation — proxies nacstar, caches daily
-    truage_account/routes.py      # TruAge Account Manager — proxies nacstam, caches daily
-    truage_dictionary/routes.py   # TruAge Data Dictionary
+    truage_account/routes.py      # TruAge Account Manager — proxies nacstam (truage-pulse), caches daily
     app_downloads/routes.py       # App Downloads — Apple App Store daily install tracking
+    stock/routes.py               # MarketMaker card wiring (external app)
+    benchmark/                    # VESTIGIAL — empty; BenchPoint is an EXTERNAL card, no router wired
 tests/
   test_config.py       # APP_REGISTRY structure, USER_ROLES integrity
   test_routes.py       # HTTP-level route tests via TestClient
@@ -224,3 +225,66 @@ curl -s -X POST "https://nacsportal.up.railway.app/api/cron/backfill-downloads?t
 # Check Railway logs for download activity
 railway logs --service pez-portal | grep app_download
 ```
+
+
+---
+
+## ✅ Verified against code — 2026-07-02 (reconciliation)
+
+This portal is the **umbrella app**. Below is the code-verified reality; a few
+older lines above were slightly ahead of / behind the code and are corrected here.
+
+### Framework & entry
+- **FastAPI** + **uvicorn** (1 worker), Python 3.12. NOT Flask. Entry: `app/main.py::create_app()`.
+- Deps (`requirements.txt`): fastapi, uvicorn[standard], python-jose[cryptography] (Auth0 JWT), httpx (proxying), pydantic-settings, structlog, resend (email), psycopg2-binary (Postgres), aiofiles (StaticFiles).
+- Swagger/`/openapi.json` are exposed **only when not production** (they'd list the admin GitHub-commit and Railway-cron endpoints).
+
+### Routers actually wired in `main.py`
+`admin`, `truage_activation`, `truage_account`, `stock`, `app_downloads`.
+There is **no `truage_dictionary` router** — the "TruAge Data Dictionary" card is an
+**external link** to `https://nacstam.up.railway.app/dictionary` (i.e. truage-pulse's
+own /dictionary page). The `benchmark/` folder is **empty/vestigial**; BenchPoint is an
+external subdomain card, not a proxied router.
+
+### Sub-app / upstream map (the key cross-service dependency)
+| Portal card (slug) | Internal? | Upstream / URL | Backing repo |
+|---|---|---|---|
+| TruAge Activation (`truage_activation`) | proxy router | `https://nacstar.up.railway.app` | `truage-activation-report` |
+| TruAge Account Manager (`truage_account`) | proxy router | `https://nacstam.up.railway.app` | `truage-pulse` |
+| TruAge Data Dictionary (`truage_dictionary`) | external card | `https://nacstam.up.railway.app/dictionary` | `truage-pulse` |
+| BenchPoint (`benchmark`) | external card | `https://benchpoint.dashboard.mytruage.org/ui/` | `nacs-990-benchmark` |
+| MarketMaker (`stock`) | external card | `https://pezmarketmaker.up.railway.app` | `marketmaker` |
+| C-Store Intel (`cstore_intel`) | external card | `https://scraping.up.railway.app` | `convenience-store-intel` |
+| Patent Atlas (`patent_atlas`) | external card | `https://patent-atlas.dashboard.mytruage.org` | *(not in our scope; separate repo)* |
+| Personal Email Agent (`personal_email`) | external card | `https://email-monitor.up.railway.app/` | *(personal project — ignore)* |
+| App Downloads (`app_downloads`) | internal router | `/apps/app-downloads/` (Apple App Store Connect API) | this repo |
+| Admin (`admin`) | internal router | `/apps/admin/` | this repo |
+
+APP_REGISTRY lives in `app/config.py` (also holds `USER_ROLES` and `EMAIL_SUBSCRIPTIONS`).
+
+### How proxy / cache / email actually work (verified)
+- **Proxy**: `truage_activation` and `truage_account` routers fetch the upstream report
+  HTML with httpx and run it through `_inject_base()` — injects `<base href="{upstream}/">`
+  and strips the upstream `<nav>` so the embedded report has no duplicate navigation.
+- **Refresh semantics differ**: activation's `run_daily()` POSTs `{nacstar}/refresh`
+  (triggers a fresh HubSpot pull) then polls `/`. Account manager (`nacstam`/pulse) has
+  **no `/refresh`** — it pulls live — so `run_daily()` just GETs `{nacstam}/audit/report`.
+- **Cache**: `app/daily_cache.py` — `account_cache` + `activation_cache` singletons; writes
+  each snapshot to the Postgres `report_cache` table and restores on startup (survives redeploys).
+- **Email**: `app/email_service.py` uses **Resend** (from `portal@dashboard.mytruage.org`).
+  Daily emails contain a 24-hour **magic-link** `/report/{token}` (no login) — tokens in the
+  Postgres `report_tokens` table (`app/report_tokens.py`), purged each cron run.
+- **Cron**: `POST /api/cron/run-daily?token=CRON_SECRET` fires all three `run_daily()` tasks
+  in the background (Railway cron `daily-reports-cron`, 13:00 UTC / 7am CT). Also:
+  `/api/cron/run-downloads`, `/api/cron/backfill-downloads`, and `/api/cron/watchdog`
+  (emails Paul if either daily report didn't populate today). All gated by `CRON_SECRET`
+  via `?token=` or `Authorization: Bearer`.
+- **Auth**: Auth0 SPA (client-side) issues an RS256 ID token; `portal.html` stores it in a
+  `pez_id_token` cookie scoped to `dashboard.mytruage.org` for SSO into subdomain sub-apps.
+  `/api/*` protected by `require_auth`/`require_app`; `/api/me` returns the caller's visible
+  apps from `USER_ROLES`. HTML shells return 200 freely (gate is client-side + per-API).
+
+### Note on the two Postgres databases
+This portal reads `PORTAL_DATABASE_URL` (see `app_downloads/routes.py`) for its own tables
+(`report_cache`, `report_tokens`, `app_downloads`), which is a **separate** database from the
+`DATABASE_URL` used by the truage-activation-report / truage-pulse services. **Verified 2026-07-02:** there are 3 Postgres services in the `nacs-portal` Railway project — this shared `Postgres` (`postgres-production-2909c…`, used by pez-portal + both TruAge backends), `cstore-postgres` (cstore only), and `nacs-990-db-postgres` (BenchPoint only).

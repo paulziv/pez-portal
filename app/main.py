@@ -8,7 +8,7 @@ from contextlib import asynccontextmanager
 from typing import AsyncGenerator
 
 import structlog
-from fastapi import FastAPI, Request
+from fastapi import Depends, FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
@@ -24,6 +24,9 @@ from app.routers.truage_activation.routes import router as truage_activation_rou
 from app.routers.truage_account.routes import router as truage_account_router, run_daily as run_account_daily
 from app.routers.stock.routes import router as stock_router
 from app.routers.app_downloads.routes import router as app_downloads_router, run_daily as run_downloads_daily, run_backfill as run_downloads_backfill
+
+from truage_core import logging as tclog, runlog
+from app.auth import require_app, UserClaims
 
 log = logging.getLogger(__name__)
 
@@ -53,6 +56,10 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     _configure_logging(settings.log_level)
     logger = structlog.get_logger()
     logger.info("Pez Portal starting", version=settings.app_version)
+    try:
+        runlog.init_tables()   # portal owns the shared run/error log
+    except Exception as exc:
+        logger.warning("runlog.init_tables failed", error=str(exc))
     yield
     logger.info("Pez Portal shutting down")
 
@@ -87,6 +94,19 @@ def create_app() -> FastAPI:
         allow_headers=["Authorization", "Content-Type"],
     )
 
+    @app.middleware("http")
+    async def _correlation_id(request: Request, call_next):
+        """Adopt or mint X-Request-ID, bind it (logs + downstream propagation), echo it back."""
+        rid = request.headers.get(tclog.REQUEST_ID_HEADER) or tclog.new_request_id()
+        tclog.bind_request_id(rid)
+        structlog.contextvars.bind_contextvars(request_id=rid, service="portal")
+        try:
+            response = await call_next(request)
+            response.headers[tclog.REQUEST_ID_HEADER] = rid
+            return response
+        finally:
+            structlog.contextvars.clear_contextvars()
+
     @app.get("/health", include_in_schema=False)
     async def health() -> dict:
         return {"status": "ok", "version": settings.app_version}
@@ -96,6 +116,14 @@ def create_app() -> FastAPI:
         return JSONResponse({
             "truage_account":    account_cache.to_status(),
             "truage_activation": activation_cache.to_status(),
+        })
+
+    @app.get("/api/ops", include_in_schema=False)
+    async def api_ops(_user: UserClaims = Depends(require_app("admin")), limit: int = 50) -> JSONResponse:
+        """Cross-service run/error log (admin only) — 'what ran / what broke everywhere'."""
+        return JSONResponse({
+            "runs": runlog.recent_runs(limit=limit),
+            "errors": runlog.recent_errors(limit=limit),
         })
 
     @app.post("/api/cron/run-daily", include_in_schema=False)

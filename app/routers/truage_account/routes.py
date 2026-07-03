@@ -11,6 +11,7 @@ from fastapi.responses import HTMLResponse, JSONResponse
 from app.auth import UserClaims, require_app
 from app.daily_cache import account_cache
 from app.email_service import send_report
+from truage_core import logging as tclog, runlog
 
 log = logging.getLogger(__name__)
 
@@ -481,7 +482,7 @@ async def daily_content(user: UserClaims = Depends(_require)) -> HTMLResponse:
 async def proxy_report(user: UserClaims = Depends(_require)) -> HTMLResponse:
     try:
         async with httpx.AsyncClient(timeout=120, follow_redirects=True) as client:
-            resp = await client.get(f"{_UPSTREAM}/audit/report")
+            resp = await client.get(f"{_UPSTREAM}/audit/report", headers=tclog.outgoing_headers())
         if resp.status_code not in (200, 202):
             raise HTTPException(status_code=502, detail="Upstream returned non-200")
         return HTMLResponse(content=_inject_base(resp.text), status_code=200)
@@ -543,17 +544,19 @@ async def run_daily() -> str:
     for attempt in range(5):
         try:
             async with httpx.AsyncClient(timeout=120, follow_redirects=True) as client:
-                resp = await client.get(f"{_UPSTREAM}/audit/report")
+                resp = await client.get(f"{_UPSTREAM}/audit/report", headers=tclog.outgoing_headers())
             if resp.status_code == 200 and len(resp.text) > 10_000:
                 account_cache.set(_inject_base(resp.text))
                 log.info("truage_account.run_daily: report cached on attempt %d", attempt + 1)
                 _send_subscribed_emails()
+                runlog.record_run("portal", "truage_account", "ok", correlation_id=tclog.current_request_id())
                 return f"ok (attempt {attempt + 1})"
         except Exception:
             pass
         if attempt < 2:
             await asyncio.sleep(10)
     log.warning("truage_account.run_daily: upstream report not ready after 3 attempts")
+    runlog.record_run("portal", "truage_account", "error", correlation_id=tclog.current_request_id(), step="upstream_not_ready")
     return "error: upstream report not ready after 3 attempts"
 
 

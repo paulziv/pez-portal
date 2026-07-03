@@ -1,6 +1,6 @@
 # SESSION RESUME — TruAge/NACS Portal vNext
 
-> ✅ **PHASE 1 COMPLETE & LIVE (2026-07-03).** truage-core adopted (config, testrecords, hubspot
+> ✅ **PHASE 1 LIVE · PHASE 2 CODE-COMPLETE (pending deploy: publish v0.2.1, set RUNLOG_DATABASE_URL on all 3, push) (2026-07-03).** truage-core adopted (config, testrecords, hubspot
 > client/pull) across both TruAge services, verified byte-identical, deployed to Railway
 > (git-in-Dockerfile fix applied), reports serving. Post-deploy cleanup done: docs/CLAUDE.md
 > updated, characterization scratch removed + git-ignored. Remaining is NON-URGENT (below).
